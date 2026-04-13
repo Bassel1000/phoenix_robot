@@ -1,0 +1,9 @@
+# Computer Vision and Matrix Math (For ArUco markers and RTSP stream)
+opencv-contrib-python
+numpy
+
+# AI Object Detection (For YOLO fire detection)
+ultralytics
+
+# MQTT Communication (To send coordinates to the Raspberry Pi)
+paho-mqtt
