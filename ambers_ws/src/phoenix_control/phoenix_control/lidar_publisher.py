@@ -41,8 +41,8 @@ class LidarPublisher(Node):
         # 1 degree increment in radians
         scan_msg.angle_increment = math.pi / 180.0 
         
-        scan_msg.range_min = 0.02  # 2cm min distance
-        scan_msg.range_max = 12.0  # 12m max distance
+        scan_msg.range_min = 0.35 # Calibrated to ignore robot chassis
+        scan_msg.range_max = 10.0  # 10m max distance
         scan_msg.ranges = ranges
         
         self.publisher_.publish(scan_msg)
