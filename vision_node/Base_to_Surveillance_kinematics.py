@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 
@@ -54,7 +55,8 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
 # --- Example Usage ---
 if __name__ == '__main__':
     # Initialize webcam
-    #tapo_rtsp_url = "rtsp://phoenix:ambers%232026@192.168.1.20:554/stream1"
+    # Provide the RTSP URL via the RTSP_URL environment variable to avoid hardcoded credentials
+    # tapo_rtsp_url = os.environ.get("RTSP_URL", "rtsp://default_user:default_pass@127.0.0.1:554/stream1")
     cap = cv2.VideoCapture(0)
 
     # NOTE: You MUST calibrate your specific camera to get accurate matrices. 

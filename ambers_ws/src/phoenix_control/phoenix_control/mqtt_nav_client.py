@@ -1,3 +1,4 @@
+import os
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -22,10 +23,14 @@ class MqttNavClient(Node):
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         
-        # Replace with your HiveMQ Cloud credentials
+        # Load credentials from environment variables
+        mqtt_username = os.environ.get("MQTT_USERNAME", "default_user")
+        mqtt_password = os.environ.get("MQTT_PASSWORD", "default_password")
+        mqtt_broker = os.environ.get("MQTT_BROKER", "broker.hivemq.cloud")
+        
         self.mqtt_client.tls_set()
-        self.mqtt_client.username_pw_set("phoenix", "Ambers2026")
-        self.mqtt_client.connect("b3a389a5b99d452c856bdd2af40b564f.s1.eu.hivemq.cloud", 8883, 60)
+        self.mqtt_client.username_pw_set(mqtt_username, mqtt_password)
+        self.mqtt_client.connect(mqtt_broker, 8883, 60)
         
         # Start MQTT loop in the background
         self.mqtt_client.loop_start()
