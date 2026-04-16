@@ -4,7 +4,26 @@ Intelligent Mobile Robot for autonomous flame location detection and suppression
 
 ---
 
+## 🚀 Quick Start (Using Helper Scripts)
+To make running the simulation and mapping processes easier, this repository includes a dedicated `scripts/` directory. 
+
+**First time setup (Make scripts executable):**
+```bash
+cd ambers_ws
+chmod +x scripts/*.sh
+```
+
+**Available Automation Scripts:**
+
+- `./scripts/build_sim.sh` - Updates and builds the simulation packages.
+- `./scripts/launch_gazebo.sh` - Launches the Gazebo simulation environment.
+- `./scripts/launch_display.sh` - Launches the robot description display.
+- `./scripts/run_teleop.sh` - Starts the teleop keyboard node to drive Phoenix manually.
+- `./scripts/start_slam.sh` - Starts the SLAM Toolbox for environment mapping.
+- `./scripts/save_map.sh` - Saves the generated SLAM map to the maps/warehouse_map directory.
+
 ## 💻 1. Vision Node Setup (Native Windows / Laptop)
+
 This environment handles the YOLO object detection pipeline and streams the TP-Link Tapo C210 camera feed to track the robot's physical location.
 
 **Prerequisites:** Python 3.8+
@@ -13,20 +32,17 @@ This environment handles the YOLO object detection pipeline and streams the TP-L
    ```bash
    cd vision_node
    ```
-
 2. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-
 3. Run the tracking script:
    ```bash
    python Base_to_Survalience_kinematics.py
    ```
 
----
-
 ## 🖥️ 2. Simulation & Modeling Setup (WSL / Ubuntu)
+
 This environment is used for testing the ROS 2 Navigation stack and SLAM using Gazebo Harmonic before deploying to physical hardware.
 
 **Prerequisites:** ROS 2 (Jazzy/Humble) and Gazebo Harmonic.
@@ -35,25 +51,21 @@ This environment is used for testing the ROS 2 Navigation stack and SLAM using G
    ```bash
    cd ambers_ws
    ```
-
-2. Build only the simulation package:
+2. Build only the simulation package (or use `./scripts/build_sim.sh`):
    ```bash
    colcon build --packages-select phoenix_description --symlink-install
    ```
-
 3. Source the workspace:
    ```bash
    source install/setup.bash
    ```
-
-4. Launch the simulation:
+4. Launch the simulation (or use `./scripts/launch_gazebo.sh`):
    ```bash
    ros2 launch phoenix_description gazebo.launch.py
    ```
 
----
-
 ## 🍓 3. Mobile Edge Node Setup (Raspberry Pi 5)
+
 This environment runs natively on the robot, handling GPIO pins, UART LiDAR, I2C servos, and the BTS7960 motor drivers.
 
 **Prerequisites:** ROS 2 installed on the Pi, `gpiozero`, `paho-mqtt`, and `serial`.
@@ -62,17 +74,14 @@ This environment runs natively on the robot, handling GPIO pins, UART LiDAR, I2C
    ```bash
    cd ambers_ws
    ```
-
 2. Build only the hardware control package:
    ```bash
    colcon build --packages-select phoenix_control --symlink-install
    ```
-
 3. Source the workspace:
    ```bash
    source install/setup.bash
    ```
-
 4. Launch the hardware nodes (Example):
    ```bash
    ros2 run phoenix_control motor_controller
