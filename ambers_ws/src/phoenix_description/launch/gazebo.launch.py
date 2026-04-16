@@ -53,21 +53,18 @@ def generate_launch_description():
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
+            '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist', 
             'scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             'phoenix/camera/image_raw@sensor_msgs/msg/Image[gz.msgs.Image',
-            
-            # --- ADD THESE TWO LINES FOR ODOMETRY & TF ---
             '/model/phoenix/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
             '/model/phoenix/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'
         ],
         remappings=[
             ('scan', '/scan'),
             ('phoenix/camera/image_raw', '/phoenix/camera/image_raw'),
-            
-            # --- ADD THESE TWO LINES TO REMAP TO STANDARD ROS TOPICS ---
             ('/model/phoenix/tf', '/tf'),
             ('/model/phoenix/odometry', '/odom')
+           
         ],
         output='screen'
     )

@@ -1,11 +1,11 @@
-from setuptools import find_packages, setup
+from setuptools import setup
 
 package_name = 'phoenix_control'
 
 setup(
     name=package_name,
     version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -13,17 +13,17 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Bassel Ashraf Ahmed Elbahnasy',
-    maintainer_email='basse@todo.todo',
-    description='Hardware control nodes for the Phoenix robot.',
-    license='Apache-2.0',
+    maintainer='bassel',
+    maintainer_email='bassel@todo.todo',
+    description='Edge hardware control nodes for Phoenix Robot',
+    license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'motor_controller = phoenix_control.motor_controller:main',
-            'pump_controller = phoenix_control.pump_controller:main',
-            'lidar_publisher = phoenix_control.lidar_publisher:main',
             'mqtt_nav_client = phoenix_control.mqtt_nav_client:main',
+            'lidar_publisher = phoenix_control.lidar_publisher:main',
+            'pump_controller = phoenix_control.pump_controller:main',
         ],
     },
 )
