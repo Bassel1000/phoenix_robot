@@ -9,7 +9,6 @@ To make running the simulation and mapping processes easier, this repository inc
 
 **First time setup (Make scripts executable):**
 ```bash
-cd ambers_ws
 chmod +x scripts/*.sh
 ```
 
@@ -20,7 +19,20 @@ chmod +x scripts/*.sh
 - `./scripts/launch_display.sh` - Launches the robot description display.
 - `./scripts/run_teleop.sh` - Starts the teleop keyboard node to drive Phoenix manually.
 - `./scripts/start_slam.sh` - Starts the SLAM Toolbox for environment mapping.
-- `./scripts/save_map.sh` - Saves the generated SLAM map to the maps/warehouse_map directory.
+- `./scripts/save_map.sh` - Saves the generated SLAM map.
+- `./scripts/launch_nav2.sh` - Launches the Nav2 Stack with the generated map.
+- `./scripts/launch_rviz_nav2.sh` - Launches RViz2 with the Nav2 default view.
+
+## 📡 MQTT Integration (Local Mosquitto)
+
+We have migrated from Cloud MQTT (HiveMQ) to a **Local Mosquitto Broker** to improve latency and system reliability, removing the dependency on an active internet connection.
+
+The `Local_MQTT/` directory contains:
+- `vision_node.py` - Simulates the vision node publishing fire and human detection alerts via MQTT.
+- `robot_integration.py` - The central robot logic that listens to MQTT topics (fire/human alerts) and monitors connection heartbeats to activate fail-safes (e.g., motor stop/pump activation).
+- `robot_sub.py` - A simple debug node to verify message transmission.
+
+**Prerequisites:** Ensure your local Mosquitto broker is running on `localhost:1883`.
 
 ## 💻 1. Vision Node Setup (Native Windows / Laptop)
 
