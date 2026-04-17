@@ -18,25 +18,21 @@ class MqttNavClient(Node):
         # Publisher to trigger the pump when goal is reached
         self.pump_trigger = self.create_publisher(Bool, 'target_reached', 10)
         
-        # MQTT Setup [cite: 426, 917]
-        self.mqtt_client = mqtt.Client()
+        # MQTT Setup 
+        # Using Callback API V2 to match the local node scripts
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Nav2_Client")
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         
-        # Load credentials from environment variables
-        mqtt_username = os.environ.get("MQTT_USERNAME", "default_user")
-        mqtt_password = os.environ.get("MQTT_PASSWORD", "default_password")
-        mqtt_broker = os.environ.get("MQTT_BROKER", "broker.hivemq.cloud")
-        
-        self.mqtt_client.tls_set()
-        self.mqtt_client.username_pw_set(mqtt_username, mqtt_password)
-        self.mqtt_client.connect(mqtt_broker, 8883, 60)
+        # Connect to Local Broker 
+        # (Replace "localhost" with the Raspberry Pi's IP address if running on a different PC)
+        self.mqtt_client.connect("localhost", 1883, 60)
         
         # Start MQTT loop in the background
         self.mqtt_client.loop_start()
 
-    def on_connect(self, client, userdata, flags, rc):
-        self.get_logger().info(f"Connected to HiveMQ with result code {rc}")
+    def on_connect(self, client, userdata, flags, rc, properties):
+        self.get_logger().info(f"Connected to Local Broker with result code {rc}")
         client.subscribe("ambers/robot/navigation/target") # Update topic as needed
 
     def on_message(self, client, userdata, msg):
