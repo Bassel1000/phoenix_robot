@@ -1,3 +1,4 @@
+# Contributor: Amin Mubarak
 #2
 
 # Listens to the messages and decides what the robot should do (The Kill-Switch)

@@ -1,3 +1,4 @@
+# Contributor: Amin Mubarak
 #3
 
 # Similate the Vision Node for Fire and Human Detection
