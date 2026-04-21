@@ -2,6 +2,30 @@
 import os
 import cv2
 import numpy as np
+import torch
+import torch.nn as nn
+
+class MiniYOLO(nn.Module):
+    def __init__(self, S=7, C=2):
+        super().__init__()
+        self.S = S
+        self.C = C
+
+        self.backbone = nn.Sequential(
+            nn.Conv2d(3,16,3,padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(16,32,3,padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32,64,3,padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64,128,3,padding=1), nn.ReLU(),
+            nn.AdaptiveAvgPool2d((7,7))
+        )
+
+        self.head = nn.Conv2d(128, 5+2, kernel_size=1)
+
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.head(x)
+        x = x.permute(0,2,3,1)
+        return x
 
 def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, marker_length=0.10):
     """
@@ -54,10 +78,18 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
     return transformation_matrix, image_frame
 
 if __name__ == '__main__':
-    # 1. Load the YOLO Fire Detection Model
-    # Note: Point this to your actual model file (e.g., mini_yolo_model.pt)
-    print("Loading YOLO Fire Detection model...")
-    model = YOLO("mini_yolo_model.pt") # Update with the correct path to your .pt file
+    # 1. Load the Custom Fire Detection Model (MiniYOLO)
+    print("Loading Custom Fire Detection model...")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = MiniYOLO(S=7, C=2).to(device)
+    
+    # Construct the absolute path to the model file to avoid FileNotFoundError
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(current_dir, "fire_detection_model_fixed.pt")
+    
+    # Load the state dict.
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
 
     # Initialize camera
     tapo_rtsp_url = os.environ.get("RTSP_URL", "rtsp://default_user:default_pass@127.0.0.1:554/stream1")
@@ -88,32 +120,56 @@ if __name__ == '__main__':
             robot_y = T_matrix[1, 3]
             # print(f"Robot Location: X:{robot_x:.2f}, Y:{robot_y:.2f}")
 
-        # 3. Run YOLO Fire Detection on the SAME frame
-        results = model(display_frame, stream=True, verbose=False)
-
+        # 3. Run Custom Fire Detection on the SAME frame
+        # Preprocess
+        img_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+        h_orig, w_orig = display_frame.shape[:2]
+        
+        # Resize to 416x416, Swap axes (HWC to CHW), and normalize (0-1)
+        img_input = cv2.resize(img_rgb, (416, 416)).transpose(2, 0, 1) / 255.0
+        tensor = torch.tensor(img_input, dtype=torch.float32).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            out = model(tensor) # Shape: (1, 7, 7, 7)
+            
+        # Parse output for the single highest confidence prediction
+        S = 7
+        conf_map = out[0, ..., 4]
+        flat_idx = torch.argmax(conf_map)
+        j, i = torch.unravel_index(flat_idx, (S, S))
+        
+        conf = conf_map[j, i].item()
+        
         fire_active = False # Flag you can use to trigger MQTT
         
-        for r in results:
-            boxes = r.boxes
-            for box in boxes:
-                # Get bounding box coordinates
-                x1, y1, x2, y2 = int(box.xyxy[0][0]), int(box.xyxy[0][1]), int(box.xyxy[0][2]), int(box.xyxy[0][3])
+        if conf > 0.50: # Only show detections with > 50% confidence
+            # Get prediction data
+            box = out[0, j, i, 0:4] # x_cell, y_cell, w, h
+            cls = torch.argmax(out[0, j, i, 5:]).item()
+            
+            # Convert back to original pixel coordinates
+            x_abs = ((box[0] + i) / S * w_orig).item()
+            y_abs = ((box[1] + j) / S * h_orig).item()
+            w_abs = (box[2] * w_orig).item()
+            h_abs = (box[3] * h_orig).item()
+            
+            # Bounding box corners
+            x1 = int(x_abs - w_abs / 2)
+            y1 = int(y_abs - h_abs / 2)
+            x2 = int(x_abs + w_abs / 2)
+            y2 = int(y_abs + h_abs / 2)
+            
+            # Checking if the class detected represents fire (assuming 0 or 1 is fire dependening on the labels)
+            if cls == 0 or cls == 1: 
+                fire_active = True
                 
-                # Get Confidence and Class
-                conf = float(box.conf[0])
-                cls = int(box.cls[0])
-
-                # Assuming class 0 is 'Fire' (adjust if your model uses a different class ID)
-                if conf > 0.50: # Only show detections with > 50% confidence
-                    fire_active = True
-                    
-                    # Draw a red bounding box around the fire
-                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                    
-                    # Add label and confidence score
-                    label = f"Fire: {conf:.2f}"
-                    cv2.putText(display_frame, label, (x1, y1 - 10), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                # Draw a red bounding box around the fire
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                
+                # Add label and confidence score
+                label = f"Fire: {conf:.2f}"
+                cv2.putText(display_frame, label, (x1, y1 - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         # --- Display the Window ---
         cv2.namedWindow('Vision Node: Tracking & AI', cv2.WINDOW_NORMAL)

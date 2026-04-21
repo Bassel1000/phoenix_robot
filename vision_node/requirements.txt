@@ -2,8 +2,14 @@
 opencv-contrib-python
 numpy
 
-# AI Object Detection (For YOLO fire detection)
-ultralytics
+# PyTorch Object Detection (For Custom MiniYOLO fire detection)
+torch
+torchvision
+
+# Model Training & Visualization (Used in Jupyter Notebook)
+albumentations
+tqdm
+matplotlib
 
 # MQTT Communication (To send coordinates to the Raspberry Pi)
 paho-mqtt
