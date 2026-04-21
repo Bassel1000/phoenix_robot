@@ -14,7 +14,7 @@ class MotorController(Node):
         self.left_rev = PWMOutputDevice(27)
         
         # Right Motor Driver (BTS7960)
-        self.right_fwd = PWMOutputDevice(22)
+        self.right_fwd = PWMOutputDevice(25)
         self.right_rev = PWMOutputDevice(23)
         
         self.subscription = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
