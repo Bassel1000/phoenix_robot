@@ -89,7 +89,7 @@ if __name__ == '__main__':
     
     # Construct the absolute path to the model file to avoid FileNotFoundError
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(current_dir, "fire_detection_model_fixed.pt")
+    model_path = os.path.join(current_dir, "fire_detection_model.pt")
     
     # Load the state dict.
     model.load_state_dict(torch.load(model_path, map_location=device))
