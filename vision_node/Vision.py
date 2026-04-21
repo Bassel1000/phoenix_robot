@@ -4,6 +4,10 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
+from dotenv import load_dotenv
+
+# Load environment variables from a .env file if present
+load_dotenv()
 
 class MiniYOLO(nn.Module):
     def __init__(self, S=7, C=2):
@@ -92,8 +96,16 @@ if __name__ == '__main__':
     model.eval()
 
     # Initialize camera
-    tapo_rtsp_url = os.environ.get("RTSP_URL", "rtsp://default_user:default_pass@127.0.0.1:554/stream1")
+    # Provide the RTSP URL via environment variable or place it directly below 
+    tapo_rtsp_url = os.environ.get("RTSP_URL") 
     cap = cv2.VideoCapture(tapo_rtsp_url)
+    
+    # Reduce OpenCV buffer size so we don't process old cached frames, which causes lag
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+    if not cap.isOpened():
+        print(f"Failed to open video stream. Input used: {tapo_rtsp_url}")
+        exit(1)
 
     # Placeholder camera matrix
     placeholder_camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]], dtype=np.float32)
@@ -102,9 +114,11 @@ if __name__ == '__main__':
     print("Starting Robot Tracking and Fire Detection...")
 
     while True:
-        ret, frame = cap.read()
+        # Grab frames continuously but only decode the most recent one to prevent buffer buildup and lag
+        cap.grab()
+        ret, frame = cap.retrieve()
         if not ret:
-            break
+            continue
 
         # 2. Run ArUco tracking for the robot (Kinematics)
         T_matrix, display_frame = calculate_transformation_matrix(
