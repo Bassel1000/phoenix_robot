@@ -53,46 +53,72 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
 
     return transformation_matrix, image_frame
 
-# --- Example Usage ---
 if __name__ == '__main__':
-    # Initialize webcam
-    # Provide the RTSP URL via the RTSP_URL environment variable to avoid hardcoded credentials
-    # tapo_rtsp_url = os.environ.get("RTSP_URL", "rtsp://default_user:default_pass@127.0.0.1:554/stream1")
-    cap = cv2.VideoCapture(0)
+    # 1. Load the YOLO Fire Detection Model
+    # Note: Point this to your actual model file (e.g., mini_yolo_model.pt)
+    print("Loading YOLO Fire Detection model...")
+    model = YOLO("mini_yolo_model.pt") # Update with the correct path to your .pt file
 
-    # NOTE: You MUST calibrate your specific camera to get accurate matrices. 
-    # These are placeholder intrinsic parameters for a generic 720p webcam.
+    # Initialize camera
+    tapo_rtsp_url = os.environ.get("RTSP_URL", "rtsp://default_user:default_pass@127.0.0.1:554/stream1")
+    cap = cv2.VideoCapture(tapo_rtsp_url)
+
+    # Placeholder camera matrix
     placeholder_camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]], dtype=np.float32)
     placeholder_dist_coeffs = np.zeros((4,1))
 
-    print("Looking for ArUco marker...")
+    print("Starting Robot Tracking and Fire Detection...")
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Calculate the T_matrix
+        # 2. Run ArUco tracking for the robot (Kinematics)
         T_matrix, display_frame = calculate_transformation_matrix(
             frame, 
             placeholder_camera_matrix, 
             placeholder_dist_coeffs, 
-            marker_length=0.093 # 10 cm printed marker
+            marker_length=0.093
         )
 
         if T_matrix is not None:
-            print("\nTransformation Matrix (Camera to Robot):")
-            print(np.round(T_matrix, decimals=3))
+            # We found the robot!
+            robot_x = T_matrix[0, 3]
+            robot_y = T_matrix[1, 3]
+            # print(f"Robot Location: X:{robot_x:.2f}, Y:{robot_y:.2f}")
 
-        # --- NEW CODE ADDED HERE ---
-        # Create a resizable window
-        cv2.namedWindow('Robot Tracking', cv2.WINDOW_NORMAL)
-        # Resize the window to fit comfortably on your screen (e.g., 1280x720)
-        cv2.resizeWindow('Robot Tracking', 1280, 720)
-        # ---------------------------
+        # 3. Run YOLO Fire Detection on the SAME frame
+        results = model(display_frame, stream=True, verbose=False)
 
-        # Show the video feed with the drawn axis
-        cv2.imshow('Robot Tracking', display_frame)
+        fire_active = False # Flag you can use to trigger MQTT
+        
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                # Get bounding box coordinates
+                x1, y1, x2, y2 = int(box.xyxy[0][0]), int(box.xyxy[0][1]), int(box.xyxy[0][2]), int(box.xyxy[0][3])
+                
+                # Get Confidence and Class
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+
+                # Assuming class 0 is 'Fire' (adjust if your model uses a different class ID)
+                if conf > 0.50: # Only show detections with > 50% confidence
+                    fire_active = True
+                    
+                    # Draw a red bounding box around the fire
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                    
+                    # Add label and confidence score
+                    label = f"Fire: {conf:.2f}"
+                    cv2.putText(display_frame, label, (x1, y1 - 10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+        # --- Display the Window ---
+        cv2.namedWindow('Vision Node: Tracking & AI', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Vision Node: Tracking & AI', 1280, 720)
+        cv2.imshow('Vision Node: Tracking & AI', display_frame)
 
         # Press 'q' to quit
         if cv2.waitKey(1) & 0xFF == ord('q'):
