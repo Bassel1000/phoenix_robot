@@ -9,6 +9,14 @@ class MotorController(Node):
         super().__init__('motor_controller')
         self.get_logger().info("Initializing Phoenix Motor Controller...")
 
+        # ------- MOTOR HARDWARE CONFIGURATION -------
+        # If your robot spins when you tell it to go straight, or goes the wrong way, 
+        # change these Booleans to True/False until it drives perfectly.
+        self.swap_left_and_right = False  # Set to True if J makes it turn Right instead of Left
+        self.invert_left         = True   # Set to True if the Left wheel goes backward when it should go forward
+        self.invert_right        = False  # Set to True if the Right wheel goes backward when it should go forward
+        # --------------------------------------------
+        
         # Left Motor Driver (BTS7960)
         self.left_fwd = PWMOutputDevice(17)
         self.left_rev = PWMOutputDevice(27)
@@ -35,9 +43,18 @@ class MotorController(Node):
         linear = msg.linear.x
         angular = msg.angular.z
         
+        # Standard Differential Drive Kinematics
         left_speed = linear - angular
         right_speed = linear + angular
         
+        # Apply hardware fixes if the physical wiring is swapped/reversed
+        if self.swap_left_and_right:
+            left_speed, right_speed = right_speed, left_speed
+        if self.invert_left:
+            left_speed = -left_speed
+        if self.invert_right:
+            right_speed = -right_speed
+            
         max_speed = max(abs(left_speed), abs(right_speed))
         if max_speed > 1.0:
             left_speed /= max_speed
