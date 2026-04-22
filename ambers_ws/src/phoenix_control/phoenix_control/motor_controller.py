@@ -25,8 +25,27 @@ class MotorController(Node):
         self.right_fwd = PWMOutputDevice(25)
         self.right_rev = PWMOutputDevice(23)
         
+        # Acceleration / Smoothing Configuration
+        # 'step' is how much the speed can change every 0.05 seconds (the timer rate).
+        # A step of 0.05 means it takes 1.0 second to reach full speed from 0 to 1.0
+        self.linear_step = 0.05 
+        self.angular_step = 0.05
+        
+        self.target_linear = 0.0
+        self.current_linear = 0.0
+        self.target_angular = 0.0
+        self.current_angular = 0.0
+        
         self.subscription = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
+        self.timer = self.create_timer(0.05, self.control_loop) # 20Hz control loop
             
+    def approach_target(self, current, target, step):
+        if current < target:
+            return min(current + step, target)
+        elif current > target:
+            return max(current - step, target)
+        return target
+
     def set_motor(self, fwd_pin, rev_pin, speed):
         speed = max(min(speed, 1.0), -1.0) 
         if speed > 0:
@@ -40,12 +59,18 @@ class MotorController(Node):
             rev_pin.value = 0.0
 
     def cmd_vel_callback(self, msg):
-        linear = msg.linear.x
-        angular = msg.angular.z
+        # Update targets based on joystick/keyboard input
+        self.target_linear = msg.linear.x
+        self.target_angular = msg.angular.z
+
+    def control_loop(self):
+        # Smoothly interpolate current speeds towards target speeds
+        self.current_linear = self.approach_target(self.current_linear, self.target_linear, self.linear_step)
+        self.current_angular = self.approach_target(self.current_angular, self.target_angular, self.angular_step)
         
-        # Standard Differential Drive Kinematics
-        left_speed = linear - angular
-        right_speed = linear + angular
+        # Standard Differential Drive Kinematics using smoothed speeds
+        left_speed = self.current_linear - self.current_angular
+        right_speed = self.current_linear + self.current_angular
         
         # Apply hardware fixes if the physical wiring is swapped/reversed
         if self.swap_left_and_right:
