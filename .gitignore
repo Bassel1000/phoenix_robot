@@ -31,3 +31,7 @@ MANIFEST
 install/
 build/
 log/
+
+# Test scripts
+vision_node/test_pi_models_tapo.py
+ vision_node/raspi_inference.py

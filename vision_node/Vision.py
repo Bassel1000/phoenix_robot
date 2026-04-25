@@ -5,6 +5,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dotenv import load_dotenv
+import tensorflow as tf
+import threading
+import time
 
 # Load environment variables from a .env file if present
 load_dotenv()
@@ -81,6 +84,45 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
 
     return transformation_matrix, image_frame
 
+class CameraStream:
+    """
+    Continually grabs frames from the camera in a background thread.
+    This prevents the OpenCV buffer from filling up and causing massive delays
+    when running heavy neural networks (like PyTorch and Keras).
+    """
+    def __init__(self, src):
+        self.stream = cv2.VideoCapture(src)
+        self.stream.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.grabbed, self.frame = self.stream.read()
+        self.stopped = False
+        
+    def start(self):
+        if self.stream.isOpened():
+            self.thread = threading.Thread(target=self.update, args=())
+            self.thread.daemon = True
+            self.thread.start()
+        return self
+
+    def update(self):
+        while not self.stopped:
+            if not self.stream.isOpened():
+                self.stopped = True
+                break
+            # Drains the internal buffer constantly, keeping only the most recent frame
+            self.grabbed, self.frame = self.stream.read()
+
+    def read(self):
+        return self.grabbed, self.frame
+
+    def stop(self):
+        self.stopped = True
+        if hasattr(self, 'thread'):
+            self.thread.join()
+        self.stream.release()
+
+    def isOpened(self):
+        return self.stream.isOpened()
+
 if __name__ == '__main__':
     # 1. Load the Custom Fire Detection Model (MiniYOLO)
     print("Loading Custom Fire Detection model...")
@@ -95,17 +137,42 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
-    # Initialize camera
+    # 1.1 Load the Keras Models for Raspberry Pi (Fire and Human)
+    print("Loading Raspberry Pi Fire and Human Detection models...")
+    fire_model_pi_path = os.path.join(current_dir, "Fire_Detection_Raspberry_Pi", "fire.h5")
+    human_model_pi_path = os.path.join(current_dir, "Human_Detection", "human.h5")
+    
+    try:
+        fire_model_pi = tf.keras.models.load_model(fire_model_pi_path)
+        human_model_pi = tf.keras.models.load_model(human_model_pi_path)
+        print("Raspberry Pi models loaded successfully.")
+    except Exception as e:
+        print(f"Error loading Keras models: {e}")
+        fire_model_pi, human_model_pi = None, None
+
+    # Initialize cameras
     # Provide the RTSP URL via environment variable or place it directly below 
     tapo_rtsp_url = os.environ.get("RTSP_URL") 
-    cap = cv2.VideoCapture(tapo_rtsp_url)
-    
-    # Reduce OpenCV buffer size so we don't process old cached frames, which causes lag
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap_tapo = CameraStream(tapo_rtsp_url).start()
 
-    if not cap.isOpened():
+    if not cap_tapo.isOpened():
         print(f"Failed to open video stream. Input used: {tapo_rtsp_url}")
         exit(1)
+
+    # Initialize Raspberry Pi Camera Module 3 stream
+    # Since this runs on the laptop, the Pi must stream its camera over the network (e.g., via RTSP, HTTP, UDP, TCP).
+    # To stream with MAX FOV from a Pi Camera Module 3 (avoiding center-crop), run this command on the Raspberry Pi:
+    # sudo rpicam-vid -n -t 0 --mode 4608:2592:12 --width 640 --height 360 --framerate 30 --codec mjpeg --listen -o tcp://0.0.0.0:8888
+    # Then in your laptop's .env file set: PI_CAMERA_URL="tcp://<PI_IP>:8888"
+    pi_camera_url = os.environ.get("PI_CAMERA_URL")
+    if pi_camera_url:
+        cap_pi = CameraStream(pi_camera_url).start()
+    else:
+        print("PI_CAMERA_URL not set in .env. Falling back to the laptop webcam (0) for testing the Pi models.")
+        cap_pi = CameraStream(0).start()
+
+    if not cap_pi.isOpened():
+        print("Failed to open Raspberry Pi Camera stream. Models will skip Pi frames.")
 
     # Placeholder camera matrix
     placeholder_camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]], dtype=np.float32)
@@ -114,15 +181,20 @@ if __name__ == '__main__':
     print("Starting Robot Tracking and Fire Detection...")
 
     while True:
-        # Grab frames continuously but only decode the most recent one to prevent buffer buildup and lag
-        cap.grab()
-        ret, frame = cap.retrieve()
-        if not ret:
+        # Get latest frames from background threads completely instantly and without blocking
+        ret_tapo, frame_tapo = cap_tapo.read()
+        ret_pi, frame_pi = False, None
+        
+        if cap_pi.isOpened():
+            ret_pi, frame_pi = cap_pi.read()
+            
+        if not ret_tapo or frame_tapo is None:
+            time.sleep(0.01) # Avoid 100% CPU lock while stream connects or reconnects
             continue
 
-        # 2. Run ArUco tracking for the robot (Kinematics)
-        T_matrix, display_frame = calculate_transformation_matrix(
-            frame, 
+        # 2. Run ArUco tracking for the robot (Kinematics) on Tapo
+        T_matrix, display_frame_tapo = calculate_transformation_matrix(
+            frame_tapo, 
             placeholder_camera_matrix, 
             placeholder_dist_coeffs, 
             marker_length=0.093
@@ -134,10 +206,10 @@ if __name__ == '__main__':
             robot_y = T_matrix[1, 3]
             # print(f"Robot Location: X:{robot_x:.2f}, Y:{robot_y:.2f}")
 
-        # 3. Run Custom Fire Detection on the SAME frame
+        # 3. Run Custom Fire Detection on the SAME Tapo frame
         # Preprocess
-        img_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-        h_orig, w_orig = display_frame.shape[:2]
+        img_rgb = cv2.cvtColor(display_frame_tapo, cv2.COLOR_BGR2RGB)
+        h_orig, w_orig = display_frame_tapo.shape[:2]
         
         # Resize to 416x416, Swap axes (HWC to CHW), and normalize (0-1)
         img_input = cv2.resize(img_rgb, (416, 416)).transpose(2, 0, 1) / 255.0
@@ -178,21 +250,55 @@ if __name__ == '__main__':
                 fire_active = True
                 
                 # Draw a red bounding box around the fire
-                cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                cv2.rectangle(display_frame_tapo, (x1, y1), (x2, y2), (0, 0, 255), 3)
                 
                 # Add label and confidence score
                 label = f"Fire: {conf:.2f}"
-                cv2.putText(display_frame, label, (x1, y1 - 10), 
+                cv2.putText(display_frame_tapo, label, (x1, y1 - 10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
-        # --- Display the Window ---
-        cv2.namedWindow('Vision Node: Tracking & AI', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Vision Node: Tracking & AI', 1280, 720)
-        cv2.imshow('Vision Node: Tracking & AI', display_frame)
+        # 4. Run Raspberry Pi Fire & Human Detection (Keras) on the Pi Camera frame
+        display_frame_pi = None
+        if ret_pi and frame_pi is not None and fire_model_pi is not None and human_model_pi is not None:
+            display_frame_pi = frame_pi.copy()
+            img_size = 128
+            
+            # Preprocess for Fire model (requires manual scaling)
+            fire_pi_img = cv2.resize(frame_pi, (img_size, img_size))
+            fire_pi_img = cv2.cvtColor(fire_pi_img, cv2.COLOR_BGR2RGB)
+            fire_pi_img = fire_pi_img.astype(np.float32) / 255.0
+            fire_pi_input = np.expand_dims(fire_pi_img, axis=0)
+            
+            fire_pi_pred = fire_model_pi.predict(fire_pi_input, verbose=0)[0][0]
+            
+            # Preprocess for Human model (rescaling layer is inside the model)
+            human_pi_img = cv2.resize(frame_pi, (img_size, img_size))
+            human_pi_img = cv2.cvtColor(human_pi_img, cv2.COLOR_BGR2RGB)
+            human_pi_img = human_pi_img.astype(np.float32)
+            human_pi_input = np.expand_dims(human_pi_img, axis=0)
+            
+            human_pi_pred = human_model_pi.predict(human_pi_input, verbose=0)[0][0]
+            
+            # Draw labels for Keras models
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(display_frame_pi, f"Pi Fire: {fire_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fire_pi_pred > 0.5 else (0, 255, 0), 2)
+            cv2.putText(display_frame_pi, f"Pi Human: {human_pi_pred:.2f}", (10, 60), font, 0.8, (255, 0, 0) if human_pi_pred > 0.5 else (0, 255, 0), 2)
+
+        # --- Display the Windows ---
+        cv2.namedWindow('Vision Node: Tapo Tracking & AI', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Vision Node: Tapo Tracking & AI', 1280, 720)
+        cv2.imshow('Vision Node: Tapo Tracking & AI', display_frame_tapo)
+        
+        if display_frame_pi is not None:
+            cv2.namedWindow('Vision Node: Pi Camera AI', cv2.WINDOW_NORMAL)
+            cv2.resizeWindow('Vision Node: Pi Camera AI', 640, 480)
+            cv2.imshow('Vision Node: Pi Camera AI', display_frame_pi)
 
         # Press 'q' to quit
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    cap.release()
+    cap_tapo.stop()
+    if cap_pi.isOpened():
+        cap_pi.stop()
     cv2.destroyAllWindows()
