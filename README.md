@@ -22,6 +22,7 @@ chmod +x scripts/*.sh
 - `./scripts/save_map.sh` - Saves the generated SLAM map.
 - `./scripts/launch_nav2.sh` - Launches the Nav2 Stack with the generated map.
 - `./scripts/launch_rviz_nav2.sh` - Launches RViz2 with the Nav2 default view.
+- `./scripts/start_pi_camera_stream.sh` - Starts the Raspberry Pi camera streaming for the vision node.
 
 ## 📡 MQTT Integration (Local Mosquitto)
 
@@ -36,7 +37,7 @@ The `Local_MQTT/` directory contains:
 
 ## 💻 1. Vision Node Setup (Native Windows / Laptop)
 
-This environment handles the YOLO object detection pipeline and streams the TP-Link Tapo C210 camera feed to track the robot's physical location.
+This environment handles the object detection pipelines and visual tracking. It features a scalable structure for different cameras via the `CameraStream` class, supporting both the TP-Link Tapo C210 and Raspberry Pi cameras. Dedicated robust models are provided for **Fire Detection** and **Human Detection**.
 
 **Prerequisites:** Python 3.8+
 
@@ -48,9 +49,9 @@ This environment handles the YOLO object detection pipeline and streams the TP-L
    ```bash
    pip install -r requirements.txt
    ```
-3. Run the tracking script:
+3. Run the primary vision architecture or testing script (e.g., `Vision.py` or the Tapo Pi testing scripts):
    ```bash
-   python Base_to_Survalience_kinematics.py
+   python Vision.py
    ```
 
 ## 🖥️ 2. Simulation & Modeling Setup (WSL / Ubuntu)
@@ -78,7 +79,7 @@ This environment is used for testing the ROS 2 Navigation stack and SLAM using G
 
 ## 🍓 3. Mobile Edge Node Setup (Raspberry Pi 5)
 
-This environment runs natively on the robot, handling GPIO pins, UART LiDAR, I2C servos, and the BTS7960 motor drivers.
+This environment runs natively on the robot, handling GPIO pins, UART LiDAR, I2C servos, and the BTS7960 motor drivers (with newly implemented smooth speed control and velocity interpolation).
 
 **Prerequisites:** ROS 2 installed on the Pi, `gpiozero`, `paho-mqtt`, and `serial`.
 
