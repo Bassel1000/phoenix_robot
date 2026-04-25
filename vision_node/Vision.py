@@ -8,9 +8,45 @@ from dotenv import load_dotenv
 import tensorflow as tf
 import threading
 import time
+from flask import Flask, Response
+from flask_cors import CORS
 
 # Load environment variables from a .env file if present
 load_dotenv()
+
+app = Flask(__name__)
+CORS(app) # Allow CORS so the website can fetch the streams
+
+latest_frame_tapo = None
+latest_frame_pi = None
+
+def generate_frames(camera_type):
+    global latest_frame_tapo, latest_frame_pi
+    while True:
+        frame = None
+        if camera_type == 'tapo':
+            frame = latest_frame_tapo
+        elif camera_type == 'pi':
+            frame = latest_frame_pi
+            
+        if frame is None:
+            time.sleep(0.01)
+            continue
+            
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+@app.route('/video_feed_tapo')
+def video_feed_tapo():
+    return Response(generate_frames('tapo'), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/video_feed_pi')
+def video_feed_pi():
+    return Response(generate_frames('pi'), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+
 
 class MiniYOLO(nn.Module):
     def __init__(self, S=7, C=2):
@@ -136,6 +172,12 @@ if __name__ == '__main__':
     # Load the state dict.
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
+
+    # Start Flask video streaming server in a background thread
+    print("Starting Flask streaming server on port 5000...")
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
 
     # 1.1 Load the Keras Models for Raspberry Pi (Fire and Human)
     print("Loading Raspberry Pi Fire and Human Detection models...")
@@ -283,6 +325,16 @@ if __name__ == '__main__':
             font = cv2.FONT_HERSHEY_SIMPLEX
             cv2.putText(display_frame_pi, f"Pi Fire: {fire_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fire_pi_pred > 0.5 else (0, 255, 0), 2)
             cv2.putText(display_frame_pi, f"Pi Human: {human_pi_pred:.2f}", (10, 60), font, 0.8, (255, 0, 0) if human_pi_pred > 0.5 else (0, 255, 0), 2)
+
+        # Update global frames for Flask stream
+        if display_frame_tapo is not None:
+            ret, buffer = cv2.imencode('.jpg', display_frame_tapo)
+            if ret:
+                latest_frame_tapo = buffer.tobytes()
+        if display_frame_pi is not None:
+            ret, buffer = cv2.imencode('.jpg', display_frame_pi)
+            if ret:
+                latest_frame_pi = buffer.tobytes()
 
         # --- Display the Windows ---
         cv2.namedWindow('Vision Node: Tapo Tracking & AI', cv2.WINDOW_NORMAL)

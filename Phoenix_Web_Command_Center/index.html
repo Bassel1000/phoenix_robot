@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PHOENIX — Control Dashboard v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600;700;800;900&family=Barlow+Condensed:wght@400;600;700;900&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+  <style>
+/* ═══════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════ */
+:root {
+  --bg:        #070911;
+  --s1:        #0d0f1a;
+  --s2:        #12151f;
+  --s3:        #181c28;
+  --b1:        rgba(255,80,30,0.16);
+  --b2:        rgba(255,255,255,0.07);
+  --b3:        rgba(255,255,255,0.04);
+  --fire:      #ff4f1a;
+  --fire2:     #ff8c3a;
+  --fire3:     #ffbf6b;
+  --ok:        #00e5a0;
+  --warn:      #ffb340;
+  --danger:    #ff2d2d;
+  --info:      #5bc8ff;
+  --human:     #c084fc;
+  --text:      #eeeaf4;
+  --dim:       #7d7590;
+  --mono:      'Share Tech Mono', monospace;
+  --sans:      'Barlow', sans-serif;
+  --cond:      'Barlow Condensed', sans-serif;
+  --r-lg:      18px;
+  --r-md:      12px;
+  --r-sm:      8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+button { font-family: var(--sans); cursor: pointer; border: none; outline: none; }
+input  { font-family: var(--mono); outline: none; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 55% 35% at 85% 8%,  rgba(255,79,26,.08) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 45% at 12% 90%, rgba(255,79,26,.05) 0%, transparent 60%);
+  pointer-events: none; z-index: 0;
+}
+
+/* ─── TOP BAR ─────────────────────────────── */
+.topbar {
+  position: sticky; top: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 1.25rem; height: 56px; gap: 1rem;
+  background: rgba(7,9,17,.94);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--b1);
+}
+
+.brand { display: flex; align-items: center; gap: .75rem; flex-shrink: 0; }
+.brand-icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--fire), var(--fire2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 0 18px rgba(255,79,26,.45);
+}
+.brand-name { font-family: var(--cond); font-weight: 900; font-size: 1.15rem; letter-spacing: .12em; }
+.brand-sub  { font-size: .6rem; color: var(--dim); letter-spacing: .05em; }
+
+.topbar-pills { display: flex; gap: .4rem; flex-wrap: wrap; }
+.pill {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .25rem .6rem; border-radius: 999px;
+  font-family: var(--mono); font-size: .6rem; letter-spacing: .04em;
+  border: 1px solid var(--b2); color: var(--dim);
+  transition: all .3s;
+}
+.pill .d { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.pill.ok   { border-color: rgba(0,229,160,.5); color: var(--ok); background: rgba(0,229,160,.07); }
+.pill.warn { border-color: rgba(255,179,64,.5); color: var(--warn); background: rgba(255,179,64,.07); }
+.pill.fire { border-color: rgba(255,79,26,.6); color: var(--fire2); background: rgba(255,79,26,.1); }
+.pill.ok .d, .pill.fire .d { animation: blink 1.3s ease infinite; }
+
+.topbar-right { display: flex; align-items: center; gap: .9rem; flex-shrink: 0; }
+
+.mqtt-badge {
+  display: flex; align-items: center; gap: .4rem;
+  font-family: var(--mono); font-size: .6rem; color: var(--dim);
+}
+.mqtt-badge .d { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); transition: background .4s; }
+.mqtt-badge.live  .d { background: var(--ok); box-shadow: 0 0 10px rgba(0,229,160,.5); animation: blink 1.3s infinite; }
+.mqtt-badge.error .d { background: var(--danger); }
+
+.icon-pill {
+  background: var(--s2); border: 1px solid var(--b2);
+  color: var(--dim); border-radius: 8px;
+  padding: .3rem .55rem; font-size: .75rem;
+  transition: all .2s;
+}
+.icon-pill:hover { border-color: var(--b1); color: var(--text); }
+
+.team-tag { font-family: var(--cond); font-weight: 700; font-size: .72rem; letter-spacing: .12em; color: var(--fire); }
+
+/* ─── SHELL ───────────────────────────────── */
+.shell {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 1fr 330px;
+  gap: 1rem; padding: 1rem 1.25rem;
+  max-width: 1700px; margin: 0 auto;
+}
+
+/* ─── PANELS ──────────────────────────────── */
+.panel {
+  background: var(--s1); border: 1px solid var(--b2);
+  border-radius: var(--r-lg); overflow: hidden;
+}
+
+.panel-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .6rem .9rem; border-bottom: 1px solid var(--b2);
+}
+.panel-title {
+  font-family: var(--cond); font-weight: 700; font-size: .75rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--dim);
+}
+
+/* ─── TABS ────────────────────────────────── */
+.tabs-wrap { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: 1rem; }
+.tabs { display: flex; gap: .35rem; }
+.tab {
+  font-family: var(--cond); font-weight: 700; font-size: .78rem;
+  letter-spacing: .07em; text-transform: uppercase;
+  padding: .45rem 1rem; border-radius: 8px;
+  border: 1px solid var(--b2); background: transparent; color: var(--dim);
+  transition: all .2s;
+}
+.tab:hover { color: var(--text); border-color: rgba(255,255,255,.14); }
+.tab.active {
+  background: linear-gradient(135deg, rgba(255,79,26,.22), rgba(255,140,58,.1));
+  border-color: rgba(255,79,26,.55); color: var(--fire2);
+}
+
+.tab-panel { display: none; flex-direction: column; gap: 1rem; }
+.tab-panel.active { display: flex; }
+
+/* ─── CAMERA FEEDS ────────────────────────── */
+.feeds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+.cam-card {
+  background: var(--s2); border: 1px solid var(--b2);
+  border-radius: var(--r-lg); overflow: hidden;
+  transition: border-color .3s, box-shadow .3s;
+}
+.cam-card.fire-ring { border-color: rgba(255,79,26,.8); box-shadow: 0 0 24px rgba(255,79,26,.2); }
+.cam-card.human-ring { border-color: rgba(192,132,252,.6); box-shadow: 0 0 18px rgba(192,132,252,.15); }
+
+.cam-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .55rem .85rem; border-bottom: 1px solid var(--b2);
+}
+.cam-title { display: flex; align-items: center; gap: .45rem; font-family: var(--cond); font-weight: 700; font-size: .82rem; letter-spacing: .05em; }
+.cam-actions { display: flex; align-items: center; gap: .4rem; }
+
+.rec { display: flex; align-items: center; gap: .28rem; font-family: var(--mono); font-size: .58rem; color: #ff7b7b; }
+.rec .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 7px rgba(255,45,45,.8); animation: blink 1s ease-in-out infinite; }
+
+.ibtn {
+  width: 27px; height: 27px; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; border: 1px solid var(--b2); background: rgba(255,255,255,.04);
+  color: var(--dim); font-size: .72rem; transition: all .18s;
+}
+.ibtn:hover { border-color: var(--b1); color: var(--text); }
+
+.cam-viewport {
+  position: relative; width: 100%; aspect-ratio: 16/9;
+  background: #08080e; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.cam-viewport video, .cam-viewport img { width:100%; height:100%; object-fit:cover; display:block; }
+.cam-scanlines {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(255,255,255,.012) 0, rgba(255,255,255,.012) 1px, transparent 1px, transparent 5px);
+}
+.cam-tint {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(rgba(0,0,0,.08), rgba(255,55,15,.06));
+}
+.cam-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .5rem; width: 100%; height: 100%; min-height: 180px; z-index: 1;
+}
+.cam-placeholder .picon { font-size: 2.2rem; opacity: .15; }
+.cam-placeholder .plabel { font-family: var(--mono); font-size: .65rem; color: var(--dim); letter-spacing: .08em; }
+
+/* AI overlay badge on camera */
+.ai-badge {
+  position: absolute; top: 8px; left: 8px; z-index: 5;
+  display: none; align-items: center; gap: .35rem;
+  padding: .25rem .55rem; border-radius: 6px;
+  font-family: var(--mono); font-size: .6rem;
+  border: 1px solid rgba(255,79,26,.5); background: rgba(0,0,0,.7); color: var(--fire2);
+}
+.ai-badge.show { display: flex; }
+.ai-badge.human-badge { border-color: rgba(192,132,252,.5); color: var(--human); }
+
+.cam-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .45rem .85rem; border-top: 1px solid var(--b2);
+  font-family: var(--mono); font-size: .6rem; color: var(--dim);
+}
+
+.stream-row {
+  display: flex; gap: .4rem; align-items: center;
+  padding: .5rem .85rem; border-top: 1px solid var(--b2);
+}
+.s-input {
+  flex: 1; background: var(--s3); border: 1px solid var(--b2);
+  border-radius: 6px; color: var(--text); font-size: .65rem;
+  padding: .38rem .6rem; transition: border-color .2s;
+}
+.s-input:focus { border-color: rgba(255,79,26,.45); }
+.s-input::placeholder { color: var(--dim); }
+.s-btn {
+  font-family: var(--cond); font-weight: 700; font-size: .68rem; letter-spacing: .05em;
+  padding: .38rem .7rem; border-radius: 6px; white-space: nowrap; transition: all .2s;
+}
+.s-btn.orange { border: 1px solid rgba(255,79,26,.5); background: rgba(255,79,26,.12); color: var(--fire2); }
+.s-btn.orange:hover { background: rgba(255,79,26,.22); }
+.s-btn.green  { border: 1px solid rgba(0,229,160,.4); background: rgba(0,229,160,.08); color: var(--ok); }
+.s-btn.green:hover { background: rgba(0,229,160,.16); }
+
+/* ─── LOGS ────────────────────────────────── */
+.logs-panel { background: var(--s1); border: 1px solid var(--b2); border-radius: var(--r-lg); overflow: hidden; }
+.logs-hdr { display: flex; align-items: center; justify-content: space-between; padding: .6rem .9rem; border-bottom: 1px solid var(--b2); }
+.logs-body {
+  max-height: 460px; overflow-y: auto;
+  padding: .5rem; display: flex; flex-direction: column; gap: .3rem;
+}
+.logs-body::-webkit-scrollbar { width: 3px; }
+.logs-body::-webkit-scrollbar-thumb { background: var(--b2); border-radius: 2px; }
+
+.log {
+  display: grid; grid-template-columns: 75px 55px 1fr;
+  gap: .4rem; align-items: start;
+  padding: .4rem .55rem; border-radius: 7px;
+  border: 1px solid transparent; font-family: var(--mono); font-size: .67rem;
+  animation: slideIn .18s ease;
+}
+.log.info  { background: rgba(255,255,255,.02); border-color: var(--b3); }
+.log.ok    { background: rgba(0,229,160,.04);   border-color: rgba(0,229,160,.12); }
+.log.warn  { background: rgba(255,179,64,.04);  border-color: rgba(255,179,64,.18); }
+.log.fire  { background: rgba(255,79,26,.06);   border-color: rgba(255,79,26,.25); }
+.log.human { background: rgba(192,132,252,.05); border-color: rgba(192,132,252,.2); }
+.log.crit  { background: rgba(255,45,45,.07);   border-color: rgba(255,45,45,.3); }
+.log.hb    { background: transparent; border-color: transparent; opacity: .45; }
+
+.log-time { color: var(--dim); }
+.log-tag  { font-weight: 700; }
+.log.info  .log-tag { color: var(--dim); }
+.log.ok    .log-tag { color: var(--ok); }
+.log.warn  .log-tag { color: var(--warn); }
+.log.fire  .log-tag { color: var(--fire2); }
+.log.human .log-tag { color: var(--human); }
+.log.crit  .log-tag { color: var(--danger); }
+.log.hb    .log-tag { color: var(--dim); }
+.log-msg { color: var(--text); }
+
+.clr-btn { font-family: var(--mono); font-size: .58rem; color: var(--dim); background: none; border: 1px solid var(--b2); border-radius: 5px; padding: .22rem .5rem; transition: all .2s; }
+.clr-btn:hover { color: var(--text); border-color: var(--b1); }
+
+/* ─── SETTINGS ────────────────────────────── */
+.settings-wrap { display: flex; flex-direction: column; gap: 1rem; }
+.settings-card { background: var(--s1); border: 1px solid var(--b2); border-radius: var(--r-lg); overflow: hidden; }
+.settings-card .panel-hdr { border-bottom: 1px solid var(--b2); }
+.settings-body { padding: .8rem; display: flex; flex-direction: column; gap: .5rem; }
+
+.cfg-row { display: flex; align-items: center; gap: .6rem; }
+.cfg-lbl { font-family: var(--mono); font-size: .62rem; color: var(--dim); width: 90px; flex-shrink: 0; }
+.cfg-in {
+  flex: 1; background: var(--s3); border: 1px solid var(--b2); border-radius: 6px;
+  color: var(--text); font-size: .65rem; padding: .38rem .6rem; transition: border-color .2s;
+}
+.cfg-in:focus { border-color: rgba(255,79,26,.45); }
+
+.big-btn {
+  width: 100%; padding: .55rem; border-radius: 9px;
+  font-family: var(--cond); font-weight: 700; font-size: .78rem; letter-spacing: .08em;
+  border: 1px solid rgba(255,79,26,.5);
+  background: linear-gradient(135deg, rgba(255,79,26,.2), rgba(255,140,58,.1));
+  color: var(--fire2); transition: all .2s;
+}
+.big-btn:hover { background: linear-gradient(135deg, rgba(255,79,26,.32), rgba(255,140,58,.18)); }
+.big-btn.disc { border-color: rgba(255,45,45,.4); background: rgba(255,45,45,.08); color: #ff8585; }
+
+.toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
+.tg-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .5rem .65rem; border: 1px solid var(--b2); border-radius: 8px;
+  font-size: .73rem; color: var(--dim);
+}
+.tog { position: relative; width: 36px; height: 20px; }
+.tog input { opacity: 0; width: 0; height: 0; position: absolute; }
+.tog-track {
+  position: absolute; inset: 0; border-radius: 10px;
+  background: rgba(255,255,255,.07); border: 1px solid var(--b2); transition: .2s;
+}
+.tog-track::before {
+  content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; top: 2px; left: 2px; transition: .2s;
+}
+.tog input:checked ~ .tog-track { background: linear-gradient(135deg,var(--fire),var(--fire2)); border-color: rgba(255,79,26,.5); }
+.tog input:checked ~ .tog-track::before { transform: translateX(16px); }
+
+/* ─── SIDEBAR ─────────────────────────────── */
+.sidebar { display: flex; flex-direction: column; gap: 1rem; }
+
+/* Telemetry metrics */
+.metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--b2); }
+.metric { padding: .75rem .85rem; background: var(--s1); transition: background .2s; }
+.metric:hover { background: var(--s2); }
+.m-lbl { font-family: var(--mono); font-size: .58rem; color: var(--dim); letter-spacing: .05em; margin-bottom: .25rem; }
+.m-val { font-family: var(--cond); font-weight: 900; font-size: 1.45rem; line-height: 1; }
+.m-val.ok    { color: var(--ok); }
+.m-val.warn  { color: var(--warn); }
+.m-val.fire  { color: var(--fire); }
+.m-val.danger{ color: var(--danger); }
+.m-val.human { color: var(--human); }
+.m-val.n     { color: var(--text); }
+.m-unit { font-size: .75rem; font-weight: 400; color: var(--dim); margin-left: .15rem; }
+
+/* Fire alert banner */
+.fire-banner {
+  display: none; align-items: center; gap: .65rem;
+  padding: .55rem .85rem; background: rgba(255,45,45,.1);
+  border-bottom: 1px solid rgba(255,45,45,.3);
+  animation: firePulse .75s ease-in-out infinite alternate;
+}
+.fire-banner.show { display: flex; }
+.fire-banner .icon { font-size: 1rem; }
+.fire-banner .ftxt { font-family: var(--cond); font-weight: 700; font-size: .75rem; letter-spacing: .05em; color: #ff8585; }
+
+/* Human alert banner */
+.human-banner {
+  display: none; align-items: center; gap: .65rem;
+  padding: .4rem .85rem; background: rgba(192,132,252,.08);
+  border-bottom: 1px solid rgba(192,132,252,.2);
+}
+.human-banner.show { display: flex; }
+.human-banner .htxt { font-family: var(--cond); font-weight: 700; font-size: .75rem; letter-spacing: .05em; color: var(--human); }
+
+/* Heartbeat monitor */
+.hb-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .55rem .85rem; border-top: 1px solid var(--b2);
+  font-family: var(--mono); font-size: .62rem;
+}
+.hb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); margin-right: .4rem; display: inline-block; transition: background .4s; }
+.hb-dot.live { background: var(--ok); box-shadow: 0 0 8px rgba(0,229,160,.5); animation: hbPulse .8s ease-in-out infinite alternate; }
+.hb-dot.dead { background: var(--danger); }
+
+/* Mini temp chart */
+.chart-wrap { padding: .6rem .7rem; }
+canvas.chart { width: 100%; height: 64px; }
+
+/* Live topics */
+.topics-list { padding: .5rem .7rem; display: flex; flex-direction: column; gap: .28rem; }
+.topic-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .32rem .55rem; border-radius: 6px;
+  border: 1px solid var(--b3); background: rgba(255,255,255,.015);
+}
+.t-name { font-family: var(--mono); font-size: .6rem; color: var(--dim); }
+.t-val  { font-family: var(--mono); font-size: .6rem; color: var(--text); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Mode toggle */
+.mode-wrap { padding: .85rem; }
+.mode-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
+.mode-lbl { font-family: var(--cond); font-weight: 700; font-size: .8rem; }
+.mode-sw { display: flex; align-items: center; gap: .45rem; font-family: var(--mono); font-size: .6rem; color: var(--dim); }
+
+.big-tog { position: relative; width: 52px; height: 28px; }
+.big-tog input { opacity: 0; width: 0; height: 0; position: absolute; }
+.bt-track {
+  position: absolute; inset: 0; border-radius: 14px;
+  background: rgba(0,229,160,.14); border: 1px solid rgba(0,229,160,.35); transition: .3s;
+}
+.bt-track::before {
+  content: ''; position: absolute; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--ok); top: 3px; left: 3px; transition: .25s;
+  box-shadow: 0 0 10px rgba(0,229,160,.5);
+}
+.big-tog input:checked ~ .bt-track { background: rgba(255,79,26,.16); border-color: rgba(255,79,26,.5); }
+.big-tog input:checked ~ .bt-track::before { transform: translateX(24px); background: var(--fire); box-shadow: 0 0 10px rgba(255,79,26,.5); }
+
+.mode-desc { font-size: .7rem; color: var(--dim); line-height: 1.4; margin-bottom: .6rem; }
+.mode-fb { font-family: var(--mono); font-size: .63rem; color: var(--fire2); min-height: 16px; opacity: 0; transition: opacity .25s; }
+.mode-fb.show { opacity: 1; }
+
+/* D-PAD */
+.manual-ctrls { padding: 0 .85rem .85rem; border-top: 1px solid var(--b2); padding-top: .65rem; }
+.dpad-lbl { font-family: var(--mono); font-size: .6rem; color: var(--dim); letter-spacing: .07em; margin-bottom: .55rem; }
+.dpad {
+  display: grid; grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 52px);
+  gap: 5px; justify-content: center; margin-bottom: .7rem;
+}
+.dpad-btn {
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px; border: 1px solid var(--b2);
+  background: rgba(255,255,255,.04); color: var(--text);
+  font-size: 1rem; transition: all .12s; user-select: none;
+}
+.dpad-btn:hover  { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.18); transform: scale(1.04); }
+.dpad-btn:active { transform: scale(.93); }
+.dpad-btn.stop   { color: #ff8c8c; border-color: rgba(255,100,100,.3); }
+.dpad-btn.stop:hover { border-color: rgba(255,100,100,.6); background: rgba(255,60,60,.12); }
+.dpad-btn:nth-child(1){grid-area:1/2;} .dpad-btn:nth-child(2){grid-area:2/1;}
+.dpad-btn:nth-child(3){grid-area:2/2;} .dpad-btn:nth-child(4){grid-area:2/3;}
+.dpad-btn:nth-child(5){grid-area:3/2;}
+
+/* Nav target */
+.nav-target-row { display: flex; gap: .4rem; align-items: center; margin-bottom: .7rem; }
+.nav-label { font-family: var(--mono); font-size: .6rem; color: var(--dim); flex-shrink: 0; }
+.nav-xy { width: 56px; background: var(--s3); border: 1px solid var(--b2); border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: .65rem; padding: .35rem .5rem; }
+
+.water-btn {
+  width: 100%; padding: .8rem;
+  border-radius: 11px; border: 1px solid rgba(255,79,26,.6);
+  background: linear-gradient(135deg, #ff4f1a, #ff8c3a);
+  color: #fff; font-family: var(--cond); font-weight: 900;
+  font-size: .95rem; letter-spacing: .1em;
+  box-shadow: 0 0 22px rgba(255,79,26,.4); transition: all .15s;
+}
+.water-btn:hover { transform: scale(1.02); box-shadow: 0 0 34px rgba(255,79,26,.6); }
+.water-btn:active { transform: scale(.97); }
+.water-btn.fired { background: linear-gradient(135deg,#00c47a,#00e5a0); box-shadow: 0 0 22px rgba(0,229,160,.4); }
+
+/* ─── ANIMATIONS ──────────────────────────── */
+@keyframes blink     { 0%,100%{opacity:1;} 50%{opacity:.25;} }
+@keyframes slideIn   { from{opacity:0;transform:translateX(-6px);} to{opacity:1;transform:none;} }
+@keyframes firePulse { from{background:rgba(255,45,45,.08);} to{background:rgba(255,45,45,.18);} }
+@keyframes hbPulse   { from{opacity:.7;} to{opacity:1;} }
+
+/* ─── RESPONSIVE ──────────────────────────── */
+@media(max-width:1150px){ .shell{grid-template-columns:1fr;} .sidebar{display:grid;grid-template-columns:1fr 1fr;} }
+@media(max-width:780px) { .feeds-grid{grid-template-columns:1fr;} .topbar-pills{display:none;} .sidebar{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<!-- ─── TOP BAR ────────────────────────────── -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-icon">🔥</div>
+    <div>
+      <div class="brand-name">PHOENIX</div>
+      <div class="brand-sub">Fire Extinguishing Mobile Robot — Team AMBERS</div>
+    </div>
+  </div>
+
+  <div class="topbar-pills">
+    <span class="pill ok"  id="pillSys"><span class="d"></span>SYSTEM ACTIVE</span>
+    <span class="pill"     id="pillMode">AUTONOMOUS</span>
+    <span class="pill"     id="pillOverride">MANUAL OVERRIDE OFF</span>
+    <span class="pill"     id="pillHB">HEARTBEAT —</span>
+  </div>
+
+  <div class="topbar-right">
+    <div class="mqtt-badge" id="mqttBadge">
+      <span class="d"></span>
+      <span id="mqttBadgeTxt">MQTT OFFLINE</span>
+    </div>
+    <button class="icon-pill" id="themeBtn">☀️</button>
+    <div class="team-tag">TEAM AMBERS</div>
+  </div>
+</header>
+
+<!-- ─── MAIN LAYOUT ──────────────────────── -->
+<div class="shell">
+
+  <!-- LEFT -->
+  <div style="display:flex;flex-direction:column;gap:1rem;">
+
+    <!-- Tabs -->
+    <div class="tabs-wrap">
+      <div class="tabs">
+        <button class="tab active" data-tab="cameras">📷 Cameras</button>
+        <button class="tab" data-tab="logs">📋 Mission Logs</button>
+        <button class="tab" data-tab="settings">⚙ Settings</button>
+      </div>
+    </div>
+
+    <!-- ── CAMERAS ─────────────────────────── -->
+    <div class="tab-panel active" id="tab-cameras">
+
+      <div class="feeds-grid">
+
+        <!-- Surveillance / Tapo C210 -->
+        <div class="cam-card" id="camSurv">
+          <div class="cam-hdr">
+            <div class="cam-title">🎥 Surveillance — Tapo C210</div>
+            <div class="cam-actions">
+              <div class="rec"><span class="dot"></span>REC LIVE</div>
+              <button class="ibtn" id="fsSurv" title="Fullscreen">⛶</button>
+            </div>
+          </div>
+          <div class="cam-viewport" id="vpSurv">
+            <div class="cam-tint"></div>
+            <div class="cam-scanlines"></div>
+            <div class="ai-badge" id="aiBadgeSurv">🔥 FIRE <span id="aiFire">0%</span></div>
+            <img  id="imgSurv"  src="" alt="" style="display:none;" />
+            <video id="vidSurv" autoplay muted playsinline style="display:none;"></video>
+            <div class="cam-placeholder" id="phSurv">
+              <div class="picon">📡</div>
+              <div class="plabel">NO STREAM — ENTER RTSP/HTTP URL BELOW</div>
+            </div>
+          </div>
+          <div class="stream-row">
+            <input class="s-input" id="urlSurv" type="text"
+              placeholder="rtsp://user:pass@192.168.x.x:554/stream1   or   http://ip/video" />
+            <button class="s-btn orange" onclick="connectCam('Surv')">CONNECT</button>
+            <button class="s-btn green"  onclick="openWebcam('Surv')">WEBCAM</button>
+          </div>
+          <div class="cam-footer">
+            <span id="srcSurv">SOURCE: —</span>
+            <span id="aiSurvLabel">AI: —</span>
+          </div>
+        </div>
+
+        <!-- Robot / Pi Camera -->
+        <div class="cam-card" id="camRobot">
+          <div class="cam-hdr">
+            <div class="cam-title">🍓 Robot Camera — Pi Cam 3</div>
+            <div class="cam-actions">
+              <div class="rec"><span class="dot"></span>REC LIVE</div>
+              <button class="ibtn" id="fsRobot" title="Fullscreen">⛶</button>
+            </div>
+          </div>
+          <div class="cam-viewport" id="vpRobot">
+            <div class="cam-tint"></div>
+            <div class="cam-scanlines"></div>
+            <div class="ai-badge" id="aiBadgeFire">🔥 Pi Fire: <span id="aiPiFire">—</span></div>
+            <div class="ai-badge human-badge" id="aiBadgeHuman" style="top:38px;">👤 Human: <span id="aiPiHuman">—</span></div>
+            <img  id="imgRobot"  src="" alt="" style="display:none;" />
+            <video id="vidRobot" autoplay muted playsinline style="display:none;"></video>
+            <div class="cam-placeholder" id="phRobot">
+              <div class="picon">🍓</div>
+              <div class="plabel">Pi stream: tcp://&lt;PI_IP&gt;:8888  or  http://pi:8080/?action=stream</div>
+            </div>
+          </div>
+          <div class="stream-row">
+            <input class="s-input" id="urlRobot" type="text"
+              placeholder="http://192.168.x.x:8080/?action=stream  (mjpg-streamer on Pi)" />
+            <button class="s-btn orange" onclick="connectCam('Robot')">CONNECT</button>
+            <button class="s-btn green"  onclick="openWebcam('Robot')">WEBCAM</button>
+          </div>
+          <div class="cam-footer">
+            <span id="srcRobot">SOURCE: —</span>
+            <span id="aiRobotLabel">AI: —</span>
+          </div>
+        </div>
+
+      </div><!-- /feeds-grid -->
+    </div>
+
+    <!-- ── LOGS ────────────────────────────── -->
+    <div class="tab-panel" id="tab-logs">
+      <div class="logs-panel">
+        <div class="logs-hdr">
+          <span class="panel-title">📋 Mission Logs</span>
+          <button class="clr-btn" onclick="clearLogs()">CLEAR</button>
+        </div>
+        <div class="logs-body" id="logsBody"></div>
+      </div>
+    </div>
+
+    <!-- ── SETTINGS ────────────────────────── -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="settings-wrap">
+
+        <!-- MQTT config -->
+        <div class="settings-card">
+          <div class="panel-hdr">
+            <span class="panel-title">🔗 MQTT Broker</span>
+            <span class="mqtt-badge" id="mqttBadge2"><span class="d"></span><span id="mqttBadge2Txt">OFFLINE</span></span>
+          </div>
+          <div class="settings-body">
+            <div class="cfg-row"><span class="cfg-lbl">BROKER WS</span><input class="cfg-in" id="cfgBroker" value="ws://localhost:9001/mqtt" placeholder="ws://localhost:9001/mqtt" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">CLIENT ID</span><input class="cfg-in" id="cfgClient" value="phoenix-dash-001" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">USERNAME</span><input class="cfg-in" id="cfgUser"   placeholder="(optional)" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">PASSWORD</span><input class="cfg-in" id="cfgPass"   type="password" placeholder="(optional)" /></div>
+            <button class="big-btn" id="mqttBtn" onclick="toggleMqtt()">⚡ CONNECT TO BROKER</button>
+          </div>
+        </div>
+
+        <!-- MQTT topics — matching backend exactly -->
+        <div class="settings-card">
+          <div class="panel-hdr"><span class="panel-title">📡 MQTT Topics</span></div>
+          <div class="settings-body">
+            <div class="cfg-row"><span class="cfg-lbl">FIRE ALERT</span>  <input class="cfg-in" id="tFire"    value="robot/fire_alert" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">HUMAN ALERT</span> <input class="cfg-in" id="tHuman"   value="robot/human_alert" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">HEARTBEAT</span>   <input class="cfg-in" id="tHB"      value="robot/heartbeat" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">PI TEMP</span>     <input class="cfg-in" id="tTemp"    value="robot/temperature" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">NAV TARGET</span>  <input class="cfg-in" id="tNav"     value="ambers/robot/navigation/target" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">CMD MOVE</span>    <input class="cfg-in" id="tMove"    value="phoenix/cmd/move" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">CMD WATER</span>   <input class="cfg-in" id="tWater"   value="phoenix/cmd/water" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">CMD MODE</span>    <input class="cfg-in" id="tMode"    value="phoenix/cmd/mode" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">STATUS OUT</span>  <input class="cfg-in" id="tStatus"  value="phoenix/status" /></div>
+          </div>
+        </div>
+
+        <!-- Dashboard toggles -->
+        <div class="settings-card">
+          <div class="panel-hdr"><span class="panel-title">🎛 Dashboard</span></div>
+          <div class="settings-body">
+            <div class="toggle-grid">
+              <label class="tg-item"><span>Auto Reconnect</span>    <label class="tog"><input type="checkbox" id="setRecon"  checked /><span class="tog-track"></span></label></label>
+              <label class="tg-item"><span>Alert Sounds</span>       <label class="tog"><input type="checkbox" id="setSound"         /><span class="tog-track"></span></label></label>
+              <label class="tg-item"><span>Log Heartbeats</span>     <label class="tog"><input type="checkbox" id="setLogHB"         /><span class="tog-track"></span></label></label>
+              <label class="tg-item"><span>Log MQTT</span>           <label class="tog"><input type="checkbox" id="setLogMQ"  checked /><span class="tog-track"></span></label></label>
+              <label class="tg-item"><span>AI Badges on Cam</span>   <label class="tog"><input type="checkbox" id="setAI"     checked /><span class="tog-track"></span></label></label>
+              <label class="tg-item"><span>Show HB Logs</span>       <label class="tog"><input type="checkbox" id="setShowHB"        /><span class="tog-track"></span></label></label>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /left -->
+
+  <!-- RIGHT: SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Telemetry -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Telemetry</span>
+        <span class="panel-title" id="connLabel">—</span>
+      </div>
+      <div class="fire-banner"  id="fireBanner"><span class="icon">🔥</span><span class="ftxt">FIRE DETECTED — CONFIDENCE: <span id="fireConf">—</span></span></div>
+      <div class="human-banner" id="humanBanner"><span class="icon">👤</span><span class="htxt">HUMAN DETECTED — STATE: <span id="humanState">—</span></span></div>
+      <div class="metrics-grid">
+        <div class="metric"><div class="m-lbl">FIRE STATUS</div>  <div class="m-val warn" id="mFire">SCANNING</div></div>
+        <div class="metric"><div class="m-lbl">CONFIDENCE</div>   <div class="m-val n"    id="mConf">—</div></div>
+        <div class="metric"><div class="m-lbl">HUMAN DETECT</div> <div class="m-val n"    id="mHuman">NONE</div></div>
+        <div class="metric"><div class="m-lbl">H. STATE</div>     <div class="m-val n"    id="mHState">—</div></div>
+        <div class="metric"><div class="m-lbl">PI TEMP</div>      <div class="m-val n"    id="mPiTemp">—<span class="m-unit">°C</span></div></div>
+        <div class="metric"><div class="m-lbl">CONNECTION</div>   <div class="m-val ok"   id="mConn">STANDBY</div></div>
+      </div>
+      <div class="hb-row">
+        <div><span class="hb-dot" id="hbDot"></span><span id="hbTxt" style="font-family:var(--mono);font-size:.6rem;color:var(--dim);">HEARTBEAT — WAITING</span></div>
+        <span style="font-family:var(--mono);font-size:.58rem;color:var(--dim);" id="hbAge">—</span>
+      </div>
+      <div class="chart-wrap"><canvas class="chart" id="chart"></canvas></div>
+    </div>
+
+    <!-- Live topics -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Live MQTT Topics</span></div>
+      <div class="topics-list">
+        <div class="topic-row"><span class="t-name">robot/fire_alert</span>   <span class="t-val" id="tv-fire">—</span></div>
+        <div class="topic-row"><span class="t-name">robot/human_alert</span>  <span class="t-val" id="tv-human">—</span></div>
+        <div class="topic-row"><span class="t-name">robot/heartbeat</span>    <span class="t-val" id="tv-hb">—</span></div>
+        <div class="topic-row"><span class="t-name">robot/temperature</span>  <span class="t-val" id="tv-temp">—</span></div>
+        <div class="topic-row"><span class="t-name">phoenix/cmd/move</span>   <span class="t-val" id="tv-move">—</span></div>
+        <div class="topic-row"><span class="t-name">phoenix/cmd/water</span>  <span class="t-val" id="tv-water">—</span></div>
+        <div class="topic-row"><span class="t-name">nav/target</span>         <span class="t-val" id="tv-nav">—</span></div>
+        <div class="topic-row"><span class="t-name">phoenix/status</span>     <span class="t-val" id="tv-status">—</span></div>
+      </div>
+    </div>
+
+    <!-- Control -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Control Panel</span></div>
+
+      <div class="mode-wrap">
+        <div class="mode-row">
+          <div class="mode-lbl">Mode</div>
+          <div class="mode-sw">
+            <span>AUTO</span>
+            <label class="big-tog"><input type="checkbox" id="modeSwitch" /><span class="bt-track"></span></label>
+            <span>MANUAL</span>
+          </div>
+        </div>
+        <div class="mode-desc" id="modeDesc">Robot operating autonomously via Nav2. Fire detection and suppression managed by onboard AI pipeline.</div>
+        <div class="mode-fb"   id="modeFb"></div>
+      </div>
+
+      <!-- Manual controls (hidden in auto) -->
+      <div class="manual-ctrls" id="manualCtrls" style="display:none;">
+        <div class="dpad-lbl">▸ DIRECTIONAL CONTROL</div>
+        <div class="dpad">
+          <button class="dpad-btn" onclick="sendMove('FORWARD')">▲</button>
+          <button class="dpad-btn" onclick="sendMove('LEFT')">◀</button>
+          <button class="dpad-btn stop" onclick="sendMove('STOP')">■</button>
+          <button class="dpad-btn" onclick="sendMove('RIGHT')">▶</button>
+          <button class="dpad-btn" onclick="sendMove('BACKWARD')">▼</button>
+        </div>
+
+        <!-- Nav2 target coordinates -->
+        <div class="dpad-lbl">▸ NAV2 GOAL (map coords)</div>
+        <div class="nav-target-row">
+          <span class="nav-label">X</span><input class="nav-xy" id="navX" type="number" step="0.1" value="0.0" />
+          <span class="nav-label">Y</span><input class="nav-xy" id="navY" type="number" step="0.1" value="0.0" />
+          <button class="s-btn orange" onclick="sendNavGoal()" style="flex:1;">SEND</button>
+        </div>
+
+        <button class="water-btn" id="waterBtn" onclick="pushWater()">💧 PUSH WATER</button>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+</div><!-- /shell -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  PHOENIX DASHBOARD  –  INTEGRATED BACKEND SCRIPT
+//  Topics match: robot_integration.py / vision_node.py / mqtt_nav_client.py
+// ═══════════════════════════════════════════════════════════
+
+// ── STATE ──────────────────────────────────────────────────
+let mqttClient   = null;
+let isManual     = false;
+let lastHBTime   = null;
+let hbWatchdog   = null;
+let tempHistory  = [];          // reuse for confidence sparkline
+let confHistory  = [];
+const MAX_PTS    = 40;
+const camState   = { Surv: null, Robot: null };
+
+// ── HELPERS ────────────────────────────────────────────────
+const $  = id  => document.getElementById(id);
+const ts = ()  => new Date().toLocaleTimeString('en-GB',{hour12:false});
+
+// ── THEME ──────────────────────────────────────────────────
+let dark = localStorage.getItem('theme') !== 'light';
+function applyTheme(){
+  document.body.style.filter = dark ? '' : 'invert(1) hue-rotate(180deg)';
+  $('themeBtn').textContent = dark ? '☀️' : '🌙';
+  localStorage.setItem('theme', dark ? 'dark' : 'light');
+}
+applyTheme();
+$('themeBtn').addEventListener('click', () => { dark=!dark; applyTheme(); });
+
+// ── TABS ───────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    $('tab-'+b.dataset.tab)?.classList.add('active');
+  });
+});
+
+// ── LOGGING ────────────────────────────────────────────────
+function addLog(msg, type='info') {
+  if (type === 'hb' && !$('setShowHB').checked) return;
+  const d = document.createElement('div');
+  d.className = `log ${type}`;
+  const tags = {info:'INFO',ok:'OK',warn:'WARN',fire:'FIRE',human:'HUMAN',crit:'CRIT',hb:'HB'};
+  d.innerHTML = `<span class="log-time">${ts()}</span><span class="log-tag">[${tags[type]||type.toUpperCase()}]</span><span class="log-msg">${msg}</span>`;
+  $('logsBody').prepend(d);
+  while($('logsBody').children.length > 250) $('logsBody').lastChild.remove();
+}
+function clearLogs(){ $('logsBody').innerHTML=''; addLog('Log cleared.'); }
+
+// Seed
+addLog('PHOENIX Dashboard v2 loaded — backend integrated.','ok');
+addLog('Vision node topics: robot/fire_alert · robot/human_alert · robot/heartbeat','info');
+addLog('Nav2 topic: ambers/robot/navigation/target · Motor: phoenix/cmd/move','info');
+addLog('Connect MQTT in ⚙ Settings → enter your local Mosquitto WebSocket port (default 9001).','warn');
+
+// ── MQTT BADGE helpers ─────────────────────────────────────
+function setMqttUI(state){ // 'live'|'error'|'off'
+  ['mqttBadge','mqttBadge2'].forEach(id => {
+    const el = $(id); if(!el) return;
+    el.className = 'mqtt-badge ' + (state==='live'?'live':state==='error'?'error':'');
+  });
+  const txt = state==='live'?'MQTT LIVE':state==='error'?'MQTT ERROR':'MQTT OFFLINE';
+  $('mqttBadgeTxt').textContent = txt;
+  if($('mqttBadge2Txt')) $('mqttBadge2Txt').textContent = state==='live'?'LIVE':state==='error'?'ERR':'OFFLINE';
+}
+
+// ── MQTT CONNECT ───────────────────────────────────────────
+function toggleMqtt(){
+  if(mqttClient?.connected){
+    mqttClient.end(true); mqttClient=null;
+    setMqttUI('off');
+    $('mqttBtn').textContent='⚡ CONNECT TO BROKER';
+    addLog('MQTT: disconnected.','warn');
+    return;
+  }
+  const host = $('cfgBroker').value.trim();
+  const cid  = $('cfgClient').value.trim() || 'phoenix-dash-'+Date.now();
+  const user = $('cfgUser').value.trim()||undefined;
+  const pass = $('cfgPass').value.trim()||undefined;
+
+  addLog(`MQTT: connecting to ${host} …`);
+  $('mqttBtn').textContent='⏳ CONNECTING…';
+
+  const opts = {clientId:cid, clean:true};
+  if(user) opts.username=user;
+  if(pass) opts.password=pass;
+
+  try { mqttClient = mqtt.connect(host, opts); }
+  catch(e){
+    addLog('MQTT: '+e.message,'crit');
+    setMqttUI('error');
+    $('mqttBtn').textContent='⚡ CONNECT TO BROKER';
+    return;
+  }
+
+  mqttClient.on('connect', () => {
+    setMqttUI('live');
+    $('mqttBtn').textContent='🔌 DISCONNECT';
+    addLog(`MQTT: connected to ${host}`,'ok');
+
+    // Subscribe to all backend outgoing topics
+    const subs = [
+      $('tFire').value,
+      $('tHuman').value,
+      $('tHB').value,
+      $('tStatus').value,
+      $('tTemp').value,
+    ];
+    subs.forEach(t => mqttClient.subscribe(t));
+    addLog(`Subscribed: ${subs.join(' · ')}`,'ok');
+
+    const t0 = Date.now();
+    mqttClient.publish('phoenix/ping','ping');
+    $('mLatency').innerHTML = (Date.now()-t0)+'<span class="m-unit">ms</span>';
+    $('mConn').textContent = 'MQTT';
+    $('connLabel').textContent = 'LIVE';
+    $('pillSys').className='pill ok';
+  });
+
+  mqttClient.on('message', (topic,payload) => {
+    handleMsg(topic, payload.toString());
+  });
+
+  mqttClient.on('error', err => {
+    setMqttUI('error');
+    addLog('MQTT ERR: '+err.message,'crit');
+    $('mqttBtn').textContent='⚡ CONNECT TO BROKER';
+  });
+
+  mqttClient.on('close', () => {
+    setMqttUI('off');
+    addLog('MQTT: connection closed.','warn');
+    $('mqttBtn').textContent='⚡ CONNECT TO BROKER';
+    $('mConn').textContent='OFFLINE';
+    if($('setRecon').checked){
+      addLog('MQTT: auto-reconnect in 5s…','info');
+      setTimeout(()=>{ if(!mqttClient?.connected) toggleMqtt(); },5000);
+    }
+  });
+}
+
+// ── PUBLISH helper ─────────────────────────────────────────
+function pub(topic, payload){
+  if(!mqttClient?.connected){
+    addLog(`NOT CONNECTED — command not sent: ${payload}`,'warn');
+    return;
+  }
+  mqttClient.publish(topic, String(payload));
+  if($('setLogMQ').checked) addLog(`PUB ▸ ${topic} : ${payload}`,'info');
+}
+
+// ── MESSAGE HANDLER ────────────────────────────────────────
+// Matches exact JSON structure from vision_node.py and robot_integration.py
+function handleMsg(topic, raw){
+  const tFire  = $('tFire').value;
+  const tHuman = $('tHuman').value;
+  const tHB    = $('tHB').value;
+  const tStat  = $('tStatus').value;
+  const tTemp  = $('tTemp') ? $('tTemp').value : 'robot/temperature';
+
+  if($('setLogMQ').checked && topic !== tHB) addLog(`◂ ${topic} : ${raw}`,'hb');
+
+  let data;
+  try { data = JSON.parse(raw); } catch{ data = {raw}; }
+
+  // ── HEARTBEAT  (robot/heartbeat)
+  // Structure: { "status": "alive", "timestamp": float }
+  if(topic === tHB){
+    lastHBTime = Date.now();
+    $('tv-hb').textContent = data.status || 'alive';
+    updateHBUI(true);
+    if($('setLogHB').checked) addLog(`💓 Heartbeat — ${data.status||'alive'}`,'hb');
+    resetHBWatchdog();
+    return;
+  }
+
+  // ── FIRE ALERT  (robot/fire_alert)
+  // Structure: { "active": bool, "confidence": float, "class": str }
+  if(topic === tFire){
+    const active = !!data.active;
+    const conf   = data.confidence ?? 0;
+    const cls    = data.class || 'none';
+    $('tv-fire').textContent = active ? `🔥 ${cls} (${(conf*100).toFixed(0)}%)` : 'none';
+
+    $('fireBanner').classList.toggle('show', active);
+    $('fireConf').textContent = active ? `${(conf*100).toFixed(1)}%` : '—';
+
+    $('mFire').textContent  = active ? 'DETECTED' : 'CLEAR';
+    $('mFire').className    = 'metric-val ' + (active?'fire':'ok');
+    $('mConf').textContent  = active ? `${(conf*100).toFixed(0)}%` : '—';
+    $('mConf').className    = 'metric-val ' + (active?'fire':'n');
+
+    // AI badge on surveillance cam
+    if($('setAI').checked){
+      $('aiBadgeSurv').classList.toggle('show', active);
+      $('aiFire').textContent = `${(conf*100).toFixed(0)}%`;
+      $('aiSurvLabel').textContent = active ? `🔥 FIRE ${(conf*100).toFixed(0)}%` : 'AI: CLEAR';
+    }
+
+    $('camSurv').classList.toggle('fire-ring', active);
+
+    // Confidence sparkline
+    confHistory.push(conf*100);
+    if(confHistory.length > MAX_PTS) confHistory.shift();
+    drawChart(confHistory, active ? '#ff4f1a' : '#00e5a0');
+
+    $('pillSys').className = active ? 'pill fire' : 'pill ok';
+
+    if(active){
+      addLog(`🔥 FIRE DETECTED — class: ${cls} | confidence: ${(conf*100).toFixed(1)}%`,'fire');
+      if($('setSound').checked) beep(880);
+    }
+    return;
+  }
+
+  // ── HUMAN ALERT  (robot/human_alert)
+  // Structure: { "detected": bool, "state": str }
+  if(topic === tHuman){
+    const det   = !!data.detected;
+    const state = data.state || 'none';
+    $('tv-human').textContent = det ? `👤 ${state}` : 'none';
+
+    $('humanBanner').classList.toggle('show', det);
+    if(det) $('humanState').textContent = state;
+
+    $('mHuman').textContent  = det ? 'DETECTED':'NONE';
+    $('mHuman').className    = 'metric-val '+(det?'human':'n');
+    $('mHState').textContent = det ? state : '—';
+    $('mHState').className   = 'metric-val '+(state==='unconscious'?'danger':'n');
+
+    if($('setAI').checked){
+      $('aiBadgeFire').classList.toggle('show', true);
+      $('aiPiHuman').textContent = det ? state : 'none';
+      $('aiBadgeHuman').classList.toggle('show', det);
+      $('aiRobotLabel').textContent = det ? `👤 ${state}` : 'AI: OK';
+    }
+
+    $('camRobot').classList.toggle('human-ring', det);
+    if(det){
+      addLog(`👤 HUMAN DETECTED — state: ${state}`,'human');
+      if($('setSound').checked && state==='unconscious') beep(660);
+    }
+    return;
+  }
+
+  // ── TEMPERATURE
+  if(topic === tTemp){
+    $('tv-temp').textContent = data.temperature || raw;
+    const temp = parseFloat(data.temperature || raw);
+    if (!isNaN(temp)) {
+        $('mPiTemp').innerHTML = temp.toFixed(1) + '<span class="m-unit">°C</span>';
+        if (temp > 75) $('mPiTemp').className = 'm-val danger';
+        else if (temp > 65) $('mPiTemp').className = 'm-val warn';
+        else $('mPiTemp').className = 'm-val ok';
+    }
+  }
+
+  // ── STATUS
+  if(topic === tStat){
+    $('tv-status').textContent = raw.slice(0,30);
+    $('mConn').textContent = raw.slice(0,12).toUpperCase();
+  }
+}
+
+// ── HEARTBEAT WATCHDOG ─────────────────────────────────────
+// Mirrors robot_integration.py HEARTBEAT_TIMEOUT = 5.0s
+function resetHBWatchdog(){
+  clearTimeout(hbWatchdog);
+  hbWatchdog = setTimeout(() => {
+    updateHBUI(false);
+    addLog('!!! HEARTBEAT LOST — vision node may be offline (>5s)','crit');
+    if($('setSound').checked) beep(330);
+  }, 5500);
+}
+
+function updateHBUI(alive){
+  const dot  = $('hbDot');
+  const txt  = $('hbTxt');
+  const age  = $('hbAge');
+  const pill = $('pillHB');
+  dot.className = 'hb-dot ' + (alive?'live':'dead');
+  txt.textContent = alive ? 'HEARTBEAT — ALIVE' : 'HEARTBEAT — LOST';
+  txt.style.color = alive ? 'var(--ok)' : 'var(--danger)';
+  if(alive && lastHBTime) age.textContent = '0s ago';
+  if(!alive) age.textContent = '> 5s';
+  pill.textContent = alive ? 'HEARTBEAT LIVE' : 'HEARTBEAT LOST';
+  pill.className   = 'pill ' + (alive?'ok':'warn');
+}
+
+// Age ticker
+setInterval(()=>{
+  if(lastHBTime){
+    const s = Math.floor((Date.now()-lastHBTime)/1000);
+    $('hbAge').textContent = s+'s ago';
+  }
+},1000);
+
+// ── COMMANDS ───────────────────────────────────────────────
+function sendMove(dir){
+  pub($('tMove').value, dir);
+  $('tv-move').textContent = dir;
+  addLog(`▶ Move: ${dir}`,'info');
+}
+
+// Sends JSON {x,y} to ambers/robot/navigation/target (mqtt_nav_client.py)
+function sendNavGoal(){
+  const x = parseFloat($('navX').value)||0;
+  const y = parseFloat($('navY').value)||0;
+  const payload = JSON.stringify({x,y});
+  pub($('tNav').value, payload);
+  $('tv-nav').textContent = `x:${x} y:${y}`;
+  addLog(`🗺 Nav2 goal sent → x:${x}, y:${y}`,'ok');
+}
+
+function pushWater(){
+  pub($('tWater').value, 'PUSH');
+  $('tv-water').textContent = 'PUSH';
+  const btn = $('waterBtn');
+  btn.classList.add('fired');
+  addLog('💧 PUSH WATER command sent!','fire');
+  setTimeout(()=>btn.classList.remove('fired'),700);
+}
+
+// ── MODE SWITCH ────────────────────────────────────────────
+$('modeSwitch').addEventListener('change', () => {
+  isManual = $('modeSwitch').checked;
+  $('manualCtrls').style.display = isManual ? 'block' : 'none';
+  $('modeDesc').textContent = isManual
+    ? 'Manual override active. Use directional controls and Nav2 goal sender below.'
+    : 'Robot operating autonomously via Nav2. Onboard AI handles detection and suppression.';
+  $('pillMode').textContent     = isManual ? 'MANUAL MODE' : 'AUTONOMOUS';
+  $('pillOverride').textContent  = isManual ? 'MANUAL OVERRIDE ON' : 'MANUAL OVERRIDE OFF';
+  $('pillOverride').className    = 'pill ' + (isManual ? 'fire' : '');
+  pub($('tMode').value, isManual ? 'MANUAL' : 'AUTO');
+  showFb(isManual ? '⚡ Manual override active.' : '🤖 Autonomous mode restored.');
+  addLog(isManual ? 'Manual override activated.' : 'Autonomous mode restored.', isManual?'warn':'ok');
+});
+
+function showFb(msg){ const e=$('modeFb'); e.textContent=msg; e.classList.add('show'); clearTimeout(showFb._t); showFb._t=setTimeout(()=>e.classList.remove('show'),2500); }
+
+// ── CAMERA STREAMS ─────────────────────────────────────────
+function connectCam(cam){
+  const url = $(`url${cam}`).value.trim();
+  if(!url) return;
+
+  const img = $(`img${cam}`), vid = $(`vid${cam}`), ph = $(`ph${cam}`);
+  const srcEl = $(`src${cam}`);
+
+  // stop webcam if running
+  if(camState[cam]?.getTracks){ camState[cam].getTracks().forEach(t=>t.stop()); camState[cam]=null; }
+  vid.style.display='none'; vid.srcObject=null;
+
+  // Try MJPEG/HTTP as <img> src — works for mjpg-streamer, motion, rpicam-apps HTTP output
+  img.style.display='block'; ph.style.display='none';
+  img.src = url;
+  img.onerror = () => {
+    img.style.display='none'; ph.style.display='flex';
+    ph.querySelector('.plabel').textContent='CONNECTION FAILED — CHECK URL / CORS';
+    srcEl.textContent = 'SOURCE: ERROR';
+    addLog(`Cam ${cam}: failed → ${url}`,'warn');
+  };
+  img.onload = () => {
+    srcEl.textContent = 'SOURCE: '+url.slice(0,35)+(url.length>35?'…':'');
+    addLog(`Cam ${cam}: connected → ${url}`,'ok');
+  };
+}
+
+async function openWebcam(cam){
+  const img=$(`img${cam}`), vid=$(`vid${cam}`), ph=$(`ph${cam}`), srcEl=$(`src${cam}`);
+  img.style.display='none';
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode: cam==='Robot'?'environment':'user'}, audio:false});
+    camState[cam]=stream;
+    vid.srcObject=stream; vid.style.display='block'; ph.style.display='none';
+    srcEl.textContent = 'SOURCE: WEBCAM';
+    addLog(`Cam ${cam}: webcam opened.`,'ok');
+  }catch(e){
+    addLog(`Cam ${cam}: webcam denied — ${e.message}`,'warn');
+    ph.style.display='flex'; ph.querySelector('.plabel').textContent='WEBCAM ACCESS DENIED';
+  }
+}
+
+['Surv','Robot'].forEach(cam=>{
+  $(`fs${cam}`).addEventListener('click',()=>{
+    const vp=$(`vp${cam}`);
+    document.fullscreenElement===vp ? document.exitFullscreen() : vp.requestFullscreen().catch(()=>{});
+  });
+});
+
+// ── MINI CHART (confidence sparkline) ─────────────────────
+const canvas = $('chart');
+const ctx    = canvas.getContext('2d');
+
+function drawChart(data, color='#ff4f1a'){
+  const W=canvas.offsetWidth||280, H=canvas.offsetHeight||64;
+  canvas.width=W; canvas.height=H;
+  ctx.clearRect(0,0,W,H);
+  if(data.length<2) return;
+  const min=0, max=100, step=W/(MAX_PTS-1);
+  const pts=data.map((v,i)=>({x:i*step, y:H-((v-min)/(max-min))*H}));
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,color.replace(')',',0.4)').replace('rgb','rgba'));
+  grad.addColorStop(1,'rgba(255,79,26,0.01)');
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++){
+    const cx=(pts[i-1].x+pts[i].x)/2;
+    ctx.bezierCurveTo(cx,pts[i-1].y,cx,pts[i].y,pts[i].x,pts[i].y);
+  }
+  ctx.lineTo(pts[pts.length-1].x,H); ctx.lineTo(pts[0].x,H); ctx.closePath();
+  // build fill gradient properly
+  const fg=ctx.createLinearGradient(0,0,0,H);
+  fg.addColorStop(0,color==='#00e5a0'?'rgba(0,229,160,0.35)':'rgba(255,79,26,0.35)');
+  fg.addColorStop(1,'rgba(0,0,0,0.01)');
+  ctx.fillStyle=fg; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++){
+    const cx=(pts[i-1].x+pts[i].x)/2;
+    ctx.bezierCurveTo(cx,pts[i-1].y,cx,pts[i].y,pts[i].x,pts[i].y);
+  }
+  ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+}
+
+// Demo fill while offline
+let demoConf=5;
+setInterval(()=>{
+  if(mqttClient?.connected) return;
+  demoConf+=(Math.random()-.5)*8; demoConf=Math.max(0,Math.min(100,demoConf));
+  confHistory.push(Math.round(demoConf));
+  if(confHistory.length>MAX_PTS) confHistory.shift();
+  drawChart(confHistory);
+},2000);
+setTimeout(drawChart,400);
+window.addEventListener('resize',()=>drawChart(confHistory));
+
+// ── SOUND ──────────────────────────────────────────────────
+function beep(freq){
+  try{
+    const ac=new AudioContext(), o=ac.createOscillator(), g=ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.value=freq; o.type='square';
+    g.gain.setValueAtTime(.08,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.5);
+    o.start(); o.stop(ac.currentTime+.5);
+  }catch{}
+}
+
+// ── KEYBOARD SHORTCUTS (IJKL / arrows) ────────────────────
+document.addEventListener('keydown', e => {
+  if(!isManual || e.target.tagName==='INPUT') return;
+  const map = {i:'FORWARD',j:'LEFT',',':'BACKWARD',l:'RIGHT',k:'STOP',I:'FORWARD',J:'LEFT',L:'RIGHT',K:'STOP',ArrowUp:'FORWARD',ArrowLeft:'LEFT',ArrowDown:'BACKWARD',ArrowRight:'RIGHT'};
+  const cmd = map[e.key];
+  if(cmd){ e.preventDefault(); sendMove(cmd); }
+  if(e.key==='Enter') pushWater();
+});
+document.addEventListener('keyup', e => {
+  if(!isManual || e.target.tagName==='INPUT') return;
+  if(['i','j',',','l','k','I','J','L','K','ArrowUp','ArrowLeft','ArrowDown','ArrowRight'].includes(e.key)) sendMove('STOP');
+});
+
+addLog('⌨ Keyboard shortcuts active in Manual mode: IJKL,/Arrows=Move, K=Stop, Enter=Water','info');
+</script>
+</body>
+</html>

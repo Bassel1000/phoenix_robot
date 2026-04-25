@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PHOENIX Mission Logs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar glass-panel">
+        <div class="brand">
+          <div class="logo-mark">
+            <img
+              src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23111b2f'/%3E%3Cpath d='M52 12c6 15 20 17 20 36 0 13-10 23-23 23S26 62 26 49c0-9 4-15 10-22 0 8 5 13 12 15-2-12 1-20 4-30z' fill='%23ff8a3d'/%3E%3Ctext x='50' y='90' font-size='13' text-anchor='middle' fill='%23fff' font-family='Arial'%3ELOGO%3C/text%3E%3C/svg%3E"
+              alt="PHOENIX logo placeholder"
+            />
+          </div>
+          <div>
+            <p class="logo-title">PHOENIX MISSION LOGS</p>
+            <p class="logo-subtitle">Team AMBERS Operations Timeline</p>
+          </div>
+        </div>
+        <div class="team-tag">TEAM AMBERS</div>
+      </header>
+
+      <section class="main-panel glass-panel">
+        <div class="tabs-row">
+          <nav class="main-tabs" aria-label="Global navigation tabs">
+            <a class="main-tab-link" href="index.html">Cameras</a>
+            <a class="main-tab-link active" href="logs.html">Logs</a>
+            <a class="main-tab-link" href="index.html#panelSettings">Settings</a>
+          </nav>
+
+          <label class="theme-switch" for="themeSwitch">
+            <span>☀️</span>
+            <input id="themeSwitch" type="checkbox" aria-label="Toggle dark and light mode" />
+            <span class="theme-slider"></span>
+            <span>🌙</span>
+          </label>
+        </div>
+
+        <section class="main-content-panel active">
+          <div class="logs-board">
+            <h2>Mission Logs</h2>
+            <ul class="logs-list">
+              <li><span>11:28:17</span> Autonomous patrol initialized on Track Alpha.</li>
+              <li><span>11:28:46</span> Thermal sweep calibrated to 42°C ambient.</li>
+              <li><span>11:29:03</span> Heat signature detected at Zone B2.</li>
+              <li><span>11:29:17</span> PHOENIX repositioned using micro-navigation protocol.</li>
+              <li><span>11:29:26</span> Water discharge cycle armed.</li>
+              <li><span>11:29:41</span> PUSH WATER command validated by operator.</li>
+              <li><span>11:29:44</span> Suppression burst #01 completed successfully.</li>
+              <li><span>11:30:11</span> Area temperature returned below risk threshold.</li>
+            </ul>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>
