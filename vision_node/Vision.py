@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     # 1.1 Load the Keras Models for Raspberry Pi (Fire and Human)
     print("Loading Raspberry Pi Fire and Human Detection models...")
-    fire_model_pi_path = os.path.join(current_dir, "Fire_Detection_Raspberry_Pi", "fire.h5")
+    fire_model_pi_path = os.path.join(current_dir, "Fire_Detection_Raspberry_Pi", "fire_robust_model.h5")
     human_model_pi_path = os.path.join(current_dir, "Human_Detection", "human.h5")
     
     try:
