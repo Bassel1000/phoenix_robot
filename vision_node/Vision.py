@@ -175,6 +175,11 @@ if __name__ == '__main__':
 
     # Start Flask video streaming server in a background thread
     print("Starting Flask streaming server on port 5000...")
+    print("\n" + "="*60)
+    print("🌐 WEBSITE CAMERA URLs:")
+    print("➔ Tapo Camera URL: http://127.0.0.1:5000/video_feed_tapo")
+    print("➔ Pi Camera URL:   http://127.0.0.1:5000/video_feed_pi")
+    print("="*60 + "\n")
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
