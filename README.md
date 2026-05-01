@@ -77,7 +77,7 @@ This environment is used for testing the ROS 2 Navigation stack and SLAM using G
    ros2 launch phoenix_description gazebo.launch.py
    ```
 
-## 🍓 3. Mobile Edge Node Setup (Raspberry Pi 5)
+## 🍓 3. Mobile Edge Node Setup (Raspberry Pi 4 Model B)
 
 This environment runs natively on the robot, handling GPIO pins, UART LiDAR, I2C servos, and the BTS7960 motor drivers (with newly implemented smooth speed control and velocity interpolation).
 
