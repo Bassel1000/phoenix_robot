@@ -1,6 +1,13 @@
+import os
 from setuptools import setup
 
 package_name = 'phoenix_control'
+
+
+os.makedirs('resource', exist_ok=True)
+with open(os.path.join('resource', package_name), 'w') as f:
+    f.write('marker')
+# ---------------
 
 setup(
     name=package_name,
@@ -16,7 +23,7 @@ setup(
     maintainer='bassel',
     maintainer_email='bassel@todo.todo',
     description='Edge hardware control nodes for Phoenix Robot',
-    license='TODO: License declaration',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
