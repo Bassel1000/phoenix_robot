@@ -48,7 +48,7 @@ def run_flask():
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 
-class MiniYOLO(nn.Module):
+class GFDNet(nn.Module):
     def __init__(self, S=7, C=2):
         super().__init__()
         self.S = S
@@ -160,10 +160,10 @@ class CameraStream:
         return self.stream.isOpened()
 
 if __name__ == '__main__':
-    # 1. Load the Custom Fire Detection Model (MiniYOLO)
+    # 1. Load the Custom Fire Detection Model (GFD-Net)
     print("Loading Custom Fire Detection model...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = MiniYOLO(S=7, C=2).to(device)
+    model = GFDNet(S=7, C=2).to(device)
     
     # Construct the absolute path to the model file to avoid FileNotFoundError
     current_dir = os.path.dirname(os.path.abspath(__file__))
