@@ -31,6 +31,7 @@ setup(
             'mqtt_nav_client = phoenix_control.mqtt_nav_client:main',
             'lidar_publisher = phoenix_control.lidar_publisher:main',
             'pump_controller = phoenix_control.pump_controller:main',
+            'nozzle_controller = phoenix_control.nozzle_controller:main',
         ],
     },
 )
