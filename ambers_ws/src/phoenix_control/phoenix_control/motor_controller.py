@@ -12,9 +12,9 @@ class MotorController(Node):
         # ------- MOTOR HARDWARE CONFIGURATION -------
         # If your robot spins when you tell it to go straight, or goes the wrong way, 
         # change these Booleans to True/False until it drives perfectly.
-        self.swap_left_and_right = False  # Set to True if J makes it turn Right instead of Left
-        self.invert_left         = False   # Set to True if the Left wheel goes backward when it should go forward
-        self.invert_right        = False  # Set to True if the Right wheel goes backward when it should go forward
+        self.swap_left_and_right = True   # Change from False to True
+        self.invert_left         = True   # Change from False to True
+        self.invert_right        = False  # Keep this False
         # --------------------------------------------
         
         # Left Motor Driver (BTS7960)
