@@ -340,6 +340,34 @@ if __name__ == '__main__':
             fire_pi_input = np.expand_dims(fire_pi_img, axis=0)
             
             fire_pi_pred = fire_model_pi.predict(fire_pi_input, verbose=0)[0][0]
+
+            norm_error_x = 0.0
+            norm_error_y = 0.0
+            fire_localized = False
+
+            if fire_pi_pred > 0.5:
+                # 1. Isolate flame colors using HSV thresholding
+                hsv = cv2.cvtColor(frame_pi, cv2.COLOR_BGR2HSV)
+                lower_fire = np.array([0, 50, 50], dtype=np.uint8)     # Broad orange/red range
+                upper_fire = np.array([35, 255, 255], dtype=np.uint8)
+                mask = cv2.inRange(hsv, lower_fire, upper_fire)
+                
+                # 2. Find contours to find the center of the flame
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    largest_contour = max(contours, key=cv2.contourArea)
+                    M = cv2.moments(largest_contour)
+                    if M["m00"] != 0:
+                        cx = int(M["m10"] / M["m00"])
+                        cy = int(M["m01"] / M["m00"])
+                        
+                        # 3. Calculate errors relative to the exact center of the screen
+                        h_pi, w_pi = frame_pi.shape[:2]
+                        
+                        # Normalize errors between -1.0 (far left/top) and 1.0 (far right/bottom)
+                        norm_error_x = (cx - (w_pi / 2)) / (w_pi / 2)
+                        norm_error_y = (cy - (h_pi / 2)) / (h_pi / 2)
+                        fire_localized = True
             
             # Preprocess for Human model (rescaling layer is inside the model)
             human_pi_img = cv2.resize(frame_pi, (img_size, img_size))
