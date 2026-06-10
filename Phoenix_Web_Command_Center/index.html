@@ -531,7 +531,7 @@ canvas.chart { width: 100%; height: 64px; }
           </div>
           <div class="stream-row">
             <input class="s-input" id="urlSurv" type="text"
-              placeholder="rtsp://user:pass@192.168.x.x:554/stream1   or   http://ip/video" />
+              value="http://127.0.0.1:5000/video_feed_tapo" />
             <button class="s-btn orange" onclick="connectCam('Surv')">CONNECT</button>
             <button class="s-btn green"  onclick="openWebcam('Surv')">WEBCAM</button>
           </div>
@@ -564,7 +564,7 @@ canvas.chart { width: 100%; height: 64px; }
           </div>
           <div class="stream-row">
             <input class="s-input" id="urlRobot" type="text"
-              placeholder="http://192.168.x.x:8080/?action=stream  (mjpg-streamer on Pi)" />
+              value="http://127.0.0.1:5000/video_feed_pi" />
             <button class="s-btn orange" onclick="connectCam('Robot')">CONNECT</button>
             <button class="s-btn green"  onclick="openWebcam('Robot')">WEBCAM</button>
           </div>
@@ -1193,5 +1193,8 @@ document.addEventListener('keyup', e => {
 
 addLog('⌨ Keyboard shortcuts active in Manual mode: IJKL,/Arrows=Move, K=Stop, Enter=Water','info');
 </script>
+<script>window.onload = function() { connectCam('Surv'); connectCam('Robot'); };</script>
 </body>
 </html>
+
+

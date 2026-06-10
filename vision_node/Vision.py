@@ -159,6 +159,8 @@ class CameraStream:
     def isOpened(self):
         return self.stream.isOpened()
 
+import webbrowser
+
 if __name__ == '__main__':
     # 1. Load the Custom Fire Detection Model (GFD-Net)
     print("Loading Custom Fire Detection model...")
@@ -183,6 +185,17 @@ if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
+    
+    # Automatically open the Web Command Center UI
+    import threading
+    def open_browser():
+        time.sleep(2) # Give flask time to start
+        html_path = os.path.abspath(os.path.join(current_dir, "..", "Phoenix_Web_Command_Center", "index.html"))
+        webbrowser.open(f"file://{html_path}")
+    
+    browser_thread = threading.Thread(target=open_browser)
+    browser_thread.daemon = True
+    browser_thread.start()
 
     # 1.1 Load the Keras Models for Raspberry Pi (Fire and Human)
     print("Loading Raspberry Pi Fire and Human Detection models...")
@@ -200,11 +213,18 @@ if __name__ == '__main__':
     # Initialize cameras
     # Provide the RTSP URL via environment variable or place it directly below 
     tapo_rtsp_url = os.environ.get("RTSP_URL") 
-    cap_tapo = CameraStream(tapo_rtsp_url).start()
+    if tapo_rtsp_url:
+        cap_tapo = CameraStream(tapo_rtsp_url).start()
+    else:
+        print("RTSP_URL not set in .env. Falling back to the laptop webcam (0) for Tapo.")
+        cap_tapo = CameraStream(0).start()
 
     if not cap_tapo.isOpened():
-        print(f"Failed to open video stream. Input used: {tapo_rtsp_url}")
-        exit(1)
+        print(f"Failed to open video stream. Input used: {tapo_rtsp_url}. Falling back to 0")
+        cap_tapo = CameraStream(0).start()
+        if not cap_tapo.isOpened():
+            print("Failed to open fallback camera 0.")
+            exit(1)
 
     # Initialize Raspberry Pi Camera Module 3 stream
     # Since this runs on the laptop, the Pi must stream its camera over the network (e.g., via RTSP, HTTP, UDP, TCP).
@@ -219,7 +239,10 @@ if __name__ == '__main__':
         cap_pi = CameraStream(0).start()
 
     if not cap_pi.isOpened():
-        print("Failed to open Raspberry Pi Camera stream. Models will skip Pi frames.")
+        print("Failed to open Raspberry Pi Camera stream. Falling back to 0")
+        cap_pi = CameraStream(0).start()
+        if not cap_pi.isOpened():
+            print("Failed to open fallback camera 0 for Pi. Models will skip Pi frames.")
 
     # Placeholder camera matrix
     placeholder_camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]], dtype=np.float32)
