@@ -13,7 +13,7 @@ class LidarPublisher(Node):
         self.publisher_ = self.create_publisher(LaserScan, 'scan', 10)
         
         # Standard UART setup for Raspberry Pi GPIO serial
-        self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=1.0)
+        self.serial_port = serial.Serial('/dev/ttyS0', baudrate=230400, timeout=1.0)
         
         # Buffer to hold incomplete serial frames
         self.serial_buffer = bytearray()
