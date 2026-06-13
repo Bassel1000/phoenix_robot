@@ -70,7 +70,7 @@ class MotorController(Node):
         
         # Implement true inverse kinematics from Section 10.2
         B = 0.35   # Track Width
-        V_max = 1.123 # Theoretical Max Linear Speed at 100% PWM
+        V_max = 2.246 # Theoretical Max Linear Speed at 100% PWM
 
         v_l = self.current_linear - (self.current_angular * B / 2.0)
         v_r = self.current_linear + (self.current_angular * B / 2.0)
