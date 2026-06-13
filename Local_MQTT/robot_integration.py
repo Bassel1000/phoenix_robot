@@ -64,7 +64,7 @@ def on_message(client, userdata, msg):
     # Topic B: Fire Alert
     elif msg.topic == "robot/fire_detected":
         if system_safe: # Only process if connection is healthy
-            if data["active"]:
+            if data["fire"]:
                 logging.warning(f"FIRE SIGNAL RECEIVED! Confidence: {data['confidence']}")
                 logging.critical(">>> COMMAND: STOP MOTORS | ACTIVATE WATER PUMP")
             else:

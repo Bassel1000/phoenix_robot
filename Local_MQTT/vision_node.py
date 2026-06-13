@@ -58,7 +58,7 @@ try:
         # Randomly decide if fire is seen for testing purposes
         fire_detected = random.random() > 0.8  # 20% chance of fire
         fire_payload = {
-            "active": fire_detected,
+            "fire": fire_detected,
             "confidence": round(random.uniform(0.85, 0.99), 2) if fire_detected else 0.0,
             "class": "flame" if fire_detected else "none"
         }
