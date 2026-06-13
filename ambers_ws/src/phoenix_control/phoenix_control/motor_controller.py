@@ -68,9 +68,16 @@ class MotorController(Node):
         self.current_linear = self.approach_target(self.current_linear, self.target_linear, self.linear_step)
         self.current_angular = self.approach_target(self.current_angular, self.target_angular, self.angular_step)
         
-        # Standard Differential Drive Kinematics using smoothed speeds
-        left_speed = self.current_linear - self.current_angular
-        right_speed = self.current_linear + self.current_angular
+        # Implement true inverse kinematics from Section 10.2
+        B = 0.35   # Track Width
+        V_max = 1.123 # Theoretical Max Linear Speed at 100% PWM
+
+        v_l = self.current_linear - (self.current_angular * B / 2.0)
+        v_r = self.current_linear + (self.current_angular * B / 2.0)
+
+        # Convert target linear m/s velocities to normalized PWM percentage [-1.0 to 1.0]
+        left_speed = v_l / V_max
+        right_speed = v_r / V_max
         
         # Apply hardware fixes if the physical wiring is swapped/reversed
         if self.swap_left_and_right:
