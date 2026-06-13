@@ -49,7 +49,7 @@ def monitor_connection():
 def on_connect(client, userdata, flags, rc, properties):
     logging.info("Robot Node connected to Local Broker.")
     # Subscribe to all mission-critical topics
-    client.subscribe([("robot/fire_detected", 0), ("robot/human_alert", 0), ("robot/heartbeat", 0)])
+    client.subscribe([("robot/fire_detected", 0), ("robot/human_detected", 0), ("robot/heartbeat", 0)])
 
 def on_message(client, userdata, msg):
     global last_heartbeat_time
@@ -73,7 +73,7 @@ def on_message(client, userdata, msg):
             logging.error("Fire alert ignored: System is in Fail-Safe Mode (No connection)")
 
     # Topic C: Human Alert
-    elif msg.topic == "robot/human_alert":
+    elif msg.topic == "robot/human_detected":
         if system_safe and data["detected"]:
             logging.info(f"HUMAN DETECTED. Status: {data['state']}. Logging for Rescue.")
 

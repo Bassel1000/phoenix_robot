@@ -25,7 +25,7 @@ BROKER = "localhost"
 PORT = 1883
 TOPIC_HEARTBEAT = "robot/heartbeat"
 TOPIC_FIRE = "robot/fire_detected"
-TOPIC_HUMAN = "robot/human_alert"
+TOPIC_HUMAN = "robot/human_detected"
 
 # Initialize MQTT Client
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,"Vision_Node_Sim")
