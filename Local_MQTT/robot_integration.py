@@ -49,7 +49,7 @@ def monitor_connection():
 def on_connect(client, userdata, flags, rc, properties):
     logging.info("Robot Node connected to Local Broker.")
     # Subscribe to all mission-critical topics
-    client.subscribe([("robot/fire_alert", 0), ("robot/human_alert", 0), ("robot/heartbeat", 0)])
+    client.subscribe([("robot/fire_detected", 0), ("robot/human_alert", 0), ("robot/heartbeat", 0)])
 
 def on_message(client, userdata, msg):
     global last_heartbeat_time
@@ -62,7 +62,7 @@ def on_message(client, userdata, msg):
         last_heartbeat_time = time.time() # Reset the clock
 
     # Topic B: Fire Alert
-    elif msg.topic == "robot/fire_alert":
+    elif msg.topic == "robot/fire_detected":
         if system_safe: # Only process if connection is healthy
             if data["active"]:
                 logging.warning(f"FIRE SIGNAL RECEIVED! Confidence: {data['confidence']}")

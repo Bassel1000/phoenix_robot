@@ -24,7 +24,7 @@ logging.basicConfig(
 BROKER = "localhost" 
 PORT = 1883
 TOPIC_HEARTBEAT = "robot/heartbeat"
-TOPIC_FIRE = "robot/fire_alert"
+TOPIC_FIRE = "robot/fire_detected"
 TOPIC_HUMAN = "robot/human_alert"
 
 # Initialize MQTT Client

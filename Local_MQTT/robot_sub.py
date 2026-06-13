@@ -13,5 +13,5 @@ def on_message(client, userdata, msg):
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,"Simulated_Pi")
 client.on_message = on_message
 client.connect("localhost", 1883) # Connecting to your Windows Mosquitto
-client.subscribe("robot/fire_alert")
+client.subscribe("robot/fire_detected")
 client.loop_forever()
