@@ -69,7 +69,7 @@ try:
         # STEP C: Simulate Human Detection (Member #5's part)
         human_detected = random.random() > 0.9 # 10% chance of human
         human_payload = {
-            "detected": human_detected,
+            "human": human_detected,
             "state": random.choice(["conscious", "unconscious"]) if human_detected else "none"
         }
         client.publish(TOPIC_HUMAN, json.dumps(human_payload))

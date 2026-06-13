@@ -74,7 +74,7 @@ def on_message(client, userdata, msg):
 
     # Topic C: Human Alert
     elif msg.topic == "robot/human_detected":
-        if system_safe and data["detected"]:
+        if system_safe and data["human"]:
             logging.info(f"HUMAN DETECTED. Status: {data['state']}. Logging for Rescue.")
 
 # --- 5. EXECUTION ---
