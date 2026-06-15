@@ -611,8 +611,8 @@ canvas.chart { width: 100%; height: 64px; }
         <div class="settings-card">
           <div class="panel-hdr"><span class="panel-title">📡 MQTT Topics</span></div>
           <div class="settings-body">
-            <div class="cfg-row"><span class="cfg-lbl">FIRE ALERT</span>  <input class="cfg-in" id="tFire"    value="robot/fire_alert" /></div>
-            <div class="cfg-row"><span class="cfg-lbl">HUMAN ALERT</span> <input class="cfg-in" id="tHuman"   value="robot/human_alert" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">FIRE ALERT</span>  <input class="cfg-in" id="tFire"    value="robot/fire_detected" /></div>
+            <div class="cfg-row"><span class="cfg-lbl">HUMAN ALERT</span> <input class="cfg-in" id="tHuman"   value="robot/human_detected" /></div>
             <div class="cfg-row"><span class="cfg-lbl">HEARTBEAT</span>   <input class="cfg-in" id="tHB"      value="robot/heartbeat" /></div>
             <div class="cfg-row"><span class="cfg-lbl">PI TEMP</span>     <input class="cfg-in" id="tTemp"    value="robot/temperature" /></div>
             <div class="cfg-row"><span class="cfg-lbl">NAV TARGET</span>  <input class="cfg-in" id="tNav"     value="ambers/robot/navigation/target" /></div>
@@ -673,8 +673,8 @@ canvas.chart { width: 100%; height: 64px; }
     <div class="panel">
       <div class="panel-hdr"><span class="panel-title">Live MQTT Topics</span></div>
       <div class="topics-list">
-        <div class="topic-row"><span class="t-name">robot/fire_alert</span>   <span class="t-val" id="tv-fire">—</span></div>
-        <div class="topic-row"><span class="t-name">robot/human_alert</span>  <span class="t-val" id="tv-human">—</span></div>
+        <div class="topic-row"><span class="t-name">robot/fire_detected</span>   <span class="t-val" id="tv-fire">—</span></div>
+        <div class="topic-row"><span class="t-name">robot/human_detected</span>  <span class="t-val" id="tv-human">—</span></div>
         <div class="topic-row"><span class="t-name">robot/heartbeat</span>    <span class="t-val" id="tv-hb">—</span></div>
         <div class="topic-row"><span class="t-name">robot/temperature</span>  <span class="t-val" id="tv-temp">—</span></div>
         <div class="topic-row"><span class="t-name">phoenix/cmd/move</span>   <span class="t-val" id="tv-move">—</span></div>
@@ -782,7 +782,7 @@ function clearLogs(){ $('logsBody').innerHTML=''; addLog('Log cleared.'); }
 
 // Seed
 addLog('PHOENIX Dashboard v2 loaded — backend integrated.','ok');
-addLog('Vision node topics: robot/fire_alert · robot/human_alert · robot/heartbeat','info');
+addLog('Vision node topics: robot/fire_detected · robot/human_detected · robot/heartbeat','info');
 addLog('Nav2 topic: ambers/robot/navigation/target · Motor: phoenix/cmd/move','info');
 addLog('Connect MQTT in ⚙ Settings → enter your local Mosquitto WebSocket port (default 9001).','warn');
 
@@ -907,10 +907,10 @@ function handleMsg(topic, raw){
     return;
   }
 
-  // ── FIRE ALERT  (robot/fire_alert)
-  // Structure: { "active": bool, "confidence": float, "class": str }
+  // ── FIRE ALERT  (robot/fire_detected)
+  // Structure: { "fire": bool, "confidence": float, "class": str }
   if(topic === tFire){
-    const active = !!data.active;
+    const active = !!data.fire;
     const conf   = data.confidence ?? 0;
     const cls    = data.class || 'none';
     $('tv-fire').textContent = active ? `🔥 ${cls} (${(conf*100).toFixed(0)}%)` : 'none';
@@ -946,10 +946,10 @@ function handleMsg(topic, raw){
     return;
   }
 
-  // ── HUMAN ALERT  (robot/human_alert)
-  // Structure: { "detected": bool, "state": str }
+  // ── HUMAN ALERT  (robot/human_detected)
+  // Structure: { "human": bool, "state": str }
   if(topic === tHuman){
-    const det   = !!data.detected;
+    const det   = !!data.human;
     const state = data.state || 'none';
     $('tv-human').textContent = det ? `👤 ${state}` : 'none';
 
