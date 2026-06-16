@@ -25,9 +25,23 @@ endif()
 install(DIRECTORY
   urdf
   launch
-  worlds
+  config
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/worlds")
+  install(DIRECTORY
+    worlds
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/maps")
+  install(DIRECTORY
+    maps
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
 
 ament_package()
 

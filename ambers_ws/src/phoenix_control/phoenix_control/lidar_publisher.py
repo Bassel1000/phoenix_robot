@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
+from rclpy.qos import qos_profile_sensor_data
 import serial
 import math
 
@@ -10,7 +11,7 @@ class LidarPublisher(Node):
         super().__init__('lidar_publisher')
         self.get_logger().info("Initializing Okdo LiDAR Publisher...")
         
-        self.publisher_ = self.create_publisher(LaserScan, 'scan', 10)
+        self.publisher_ = self.create_publisher(LaserScan, 'scan', qos_profile_sensor_data)
         
         # Standard UART setup for Raspberry Pi GPIO serial
         self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=0.1)
