@@ -150,14 +150,26 @@ if __name__ == '__main__':
     print("Loading Pretrained YOLOv8 Fire Detection model...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    # === MODEL CONFIGURATION SELECTION ===
+    # Option A: Touati Kamel (YOLOv8-Small - Higher accuracy, better for screens/indoor setups)
+    MODEL_REPO = "touati-kamel/yolov8s-forest-fire-detection"
+    MODEL_FILE = "model.pt"
+
+    # Option B: Rabahdev (YOLOv8-Nano - Fast, but struggles with screen reflections)
+    # MODEL_REPO = "rabahdev/fire-smoke-yolov8n"
+    # MODEL_FILE = "best.pt"
+
+    # Option C: SHOU-ISD (YOLOv8-Nano - Alternate dataset)
+    # MODEL_REPO = "SHOU-ISD/fire-and-smoke"
+    # MODEL_FILE = "best.pt"
+
     # Securely fetch model from Hugging Face cache using huggingface_hub helper
     from huggingface_hub import hf_hub_download
     try:
-        print("Downloading custom fire detection weights from Hugging Face Hub...")
-        # Downloads 'best.pt' from a highly accurate fire-smoke dataset finetune
-        model_path = hf_hub_download(repo_id="rabahdev/fire-smoke-yolov8n", filename="best.pt")
+        print(f"Downloading custom weights from Hugging Face Hub: {MODEL_REPO}/{MODEL_FILE}...")
+        model_path = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
         model = YOLO(model_path)
-        print("Pretrained fire model initialized successfully.")
+        print(f"Model {MODEL_REPO} initialized successfully.")
     except Exception as e:
         print(f"Hugging Face fetch failed: {e}. Falling back to default baseline model...")
         model = YOLO("yolov8n.pt") 

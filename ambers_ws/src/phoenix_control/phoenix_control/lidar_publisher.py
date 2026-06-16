@@ -13,7 +13,7 @@ class LidarPublisher(Node):
         self.publisher_ = self.create_publisher(LaserScan, 'scan', 10)
         
         # Standard UART setup for Raspberry Pi GPIO serial
-        self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=1.0)
+        self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=0.1)
         
         # Buffer to hold incomplete serial frames
         self.serial_buffer = bytearray()
@@ -23,13 +23,19 @@ class LidarPublisher(Node):
         
         # Timer to read serial and publish at ~10Hz
         self.timer = self.create_timer(0.1, self.publish_scan)
-
+ 
     def publish_scan(self):
-        raw_data = self.serial_port.read_all()
-        
-        if not raw_data:
-            return
-
+        # Read blockingly if the buffer is empty to avoid dropping timer cycles
+        in_waiting = self.serial_port.in_waiting
+        if in_waiting > 0:
+            raw_data = self.serial_port.read(in_waiting)
+        else:
+            raw_data = self.serial_port.read(1) # Block for up to 100ms
+            if not raw_data:
+                return
+            # Append any bytes that arrived immediately after the block
+            raw_data += self.serial_port.read(self.serial_port.in_waiting)
+ 
         # Decode the byte stream
         ranges = self.parse_lidar_data(raw_data) 
         
