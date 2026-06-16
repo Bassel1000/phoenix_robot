@@ -13,7 +13,7 @@ class LidarPublisher(Node):
         self.publisher_ = self.create_publisher(LaserScan, 'scan', 10)
         
         # Standard UART setup for Raspberry Pi GPIO serial
-        self.serial_port = serial.Serial('/dev/ttyS0', baudrate=230400, timeout=1.0)
+        self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=1.0)
         
         # Buffer to hold incomplete serial frames
         self.serial_buffer = bytearray()
@@ -85,8 +85,17 @@ class LidarPublisher(Node):
                 # Pop the successfully parsed packet from the buffer
                 self.serial_buffer = self.serial_buffer[47:]
             else:
-                # If sync is lost, discard 1 byte and scan for the next valid header
-                self.serial_buffer.pop(0)
+                # Instantly locate the next valid packet header signature
+                try:
+                    next_header = self.serial_buffer.index(0x54)
+                    if next_header > 0:
+                        self.serial_buffer = self.serial_buffer[next_header:]
+                    else:
+                        self.serial_buffer.pop(0)
+                except ValueError:
+                    # Clear buffer completely if header signature is totally missing
+                    self.serial_buffer.clear()
+                    break
                 
         return self.current_ranges
 

@@ -10,6 +10,8 @@ import threading
 import time
 from flask import Flask, Response
 from flask_cors import CORS
+import webbrowser
+from ultralytics import YOLO
 
 # Load environment variables from a .env file if present
 load_dotenv()
@@ -47,28 +49,6 @@ def video_feed_pi():
 def run_flask():
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
-
-class GFDNet(nn.Module):
-    def __init__(self, S=7, C=2):
-        super().__init__()
-        self.S = S
-        self.C = C
-
-        self.backbone = nn.Sequential(
-            nn.Conv2d(3,16,3,padding=1), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(16,32,3,padding=1), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32,64,3,padding=1), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(64,128,3,padding=1), nn.ReLU(),
-            nn.AdaptiveAvgPool2d((7,7))
-        )
-
-        self.head = nn.Conv2d(128, 5+2, kernel_size=1)
-
-    def forward(self, x):
-        x = self.backbone(x)
-        x = self.head(x)
-        x = x.permute(0,2,3,1)
-        return x
 
 def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, marker_length=0.10):
     """
@@ -120,6 +100,7 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
 
     return transformation_matrix, image_frame
 
+
 class CameraStream:
     """
     Continually grabs frames from the camera in a background thread.
@@ -159,21 +140,25 @@ class CameraStream:
     def isOpened(self):
         return self.stream.isOpened()
 
-import webbrowser
 
 if __name__ == '__main__':
-    # 1. Load the Custom Fire Detection Model (GFD-Net)
-    print("Loading Custom Fire Detection model...")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = GFDNet(S=7, C=2).to(device)
-    
-    # Construct the absolute path to the model file to avoid FileNotFoundError
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(current_dir, "Fire_Detection_TapoC210", "fire_detection_model.pt")
+
+    # 1. Load the Pre-trained YOLOv8 Fire Detection Model
+    print("Loading Pretrained YOLOv8 Fire Detection model...")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # Load the state dict.
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
+    # Securely fetch model from Hugging Face cache using huggingface_hub helper
+    from huggingface_hub import hf_hub_download
+    try:
+        print("Downloading custom fire detection weights from Hugging Face Hub...")
+        # Downloads 'best.pt' from a highly accurate fire-smoke dataset finetune
+        model_path = hf_hub_download(repo_id="rabahdev/fire-smoke-yolov8n", filename="best.pt")
+        model = YOLO(model_path)
+        print("Pretrained fire model initialized successfully.")
+    except Exception as e:
+        print(f"Hugging Face fetch failed: {e}. Falling back to default baseline model...")
+        model = YOLO("yolov8n.pt") 
 
     # Start Flask video streaming server in a background thread
     print("Starting Flask streaming server on port 5000...")
@@ -187,7 +172,6 @@ if __name__ == '__main__':
     flask_thread.start()
     
     # Automatically open the Web Command Center UI
-    import threading
     def open_browser():
         time.sleep(2) # Give flask time to start
         html_path = os.path.abspath(os.path.join(current_dir, "..", "Phoenix_Web_Command_Center", "index.html"))
@@ -210,8 +194,7 @@ if __name__ == '__main__':
         print(f"Error loading Keras models: {e}")
         fire_model_pi, human_model_pi = None, None
 
-    # Initialize cameras
-    # Provide the RTSP URL via environment variable or place it directly below 
+    # Initialize cameras (Tapo C210 via RTSP)
     tapo_rtsp_url = os.environ.get("RTSP_URL") 
     if tapo_rtsp_url:
         cap_tapo = CameraStream(tapo_rtsp_url).start()
@@ -227,10 +210,6 @@ if __name__ == '__main__':
             exit(1)
 
     # Initialize Raspberry Pi Camera Module 3 stream
-    # Since this runs on the laptop, the Pi must stream its camera over the network (e.g., via RTSP, HTTP, UDP, TCP).
-    # To stream with MAX FOV from a Pi Camera Module 3 (avoiding center-crop), run this command on the Raspberry Pi:
-    # sudo rpicam-vid -n -t 0 --mode 4608:2592:12 --width 640 --height 360 --framerate 30 --codec mjpeg --listen -o tcp://0.0.0.0:8888
-    # Then in your laptop's .env file set: PI_CAMERA_URL="tcp://<PI_IP>:8888"
     pi_camera_url = os.environ.get("PI_CAMERA_URL")
     if pi_camera_url:
         cap_pi = CameraStream(pi_camera_url).start()
@@ -251,7 +230,7 @@ if __name__ == '__main__':
     print("Starting Robot Tracking and Fire Detection...")
 
     while True:
-        # Get latest frames from background threads completely instantly and without blocking
+        # Get latest frames instantly
         ret_tapo, frame_tapo = cap_tapo.read()
         ret_pi, frame_pi = False, None
         
@@ -259,10 +238,10 @@ if __name__ == '__main__':
             ret_pi, frame_pi = cap_pi.read()
             
         if not ret_tapo or frame_tapo is None:
-            time.sleep(0.01) # Avoid 100% CPU lock while stream connects or reconnects
+            time.sleep(0.01) 
             continue
 
-        # 2. Run ArUco tracking for the robot (Kinematics) on Tapo
+        # 2. Run ArUco tracking for the robot kinematics on Tapo
         T_matrix, display_frame_tapo = calculate_transformation_matrix(
             frame_tapo, 
             placeholder_camera_matrix, 
@@ -271,61 +250,33 @@ if __name__ == '__main__':
         )
 
         if T_matrix is not None:
-            # We found the robot!
             robot_x = T_matrix[0, 3]
             robot_y = T_matrix[1, 3]
-            # print(f"Robot Location: X:{robot_x:.2f}, Y:{robot_y:.2f}")
 
-        # 3. Run Custom Fire Detection on the SAME Tapo frame
-        # Preprocess
-        img_rgb = cv2.cvtColor(display_frame_tapo, cv2.COLOR_BGR2RGB)
-        h_orig, w_orig = display_frame_tapo.shape[:2]
+        # 3. Run Pre-trained YOLOv8 Fire Detection on the SAME Tapo frame
+        fire_active = False # Flag to trigger downstream MQTT pipelines
         
-        # Resize to 416x416, Swap axes (HWC to CHW), and normalize (0-1)
-        img_input = cv2.resize(img_rgb, (416, 416)).transpose(2, 0, 1) / 255.0
-        tensor = torch.tensor(img_input, dtype=torch.float32).unsqueeze(0).to(device)
-        
-        with torch.no_grad():
-            out = model(tensor) # Shape: (1, 7, 7, 7)
-            
-        # Parse output for the single highest confidence prediction
-        S = 7
-        conf_map = out[0, ..., 4]
-        flat_idx = torch.argmax(conf_map)
-        j, i = torch.unravel_index(flat_idx, (S, S))
-        
-        conf = conf_map[j, i].item()
-        
-        fire_active = False # Flag you can use to trigger MQTT
-        
-        if conf > 0.50: # Only show detections with > 50% confidence
-            # Get prediction data
-            box = out[0, j, i, 0:4] # x_cell, y_cell, w, h
-            cls = torch.argmax(out[0, j, i, 5:]).item()
-            
-            # Convert back to original pixel coordinates
-            x_abs = ((box[0] + i) / S * w_orig).item()
-            y_abs = ((box[1] + j) / S * h_orig).item()
-            w_abs = (box[2] * w_orig).item()
-            h_abs = (box[3] * h_orig).item()
-            
-            # Bounding box corners
-            x1 = int(x_abs - w_abs / 2)
-            y1 = int(y_abs - h_abs / 2)
-            x2 = int(x_abs + w_abs / 2)
-            y2 = int(y_abs + h_abs / 2)
-            
-            # Checking if the class detected represents fire (assuming 0 or 1 is fire dependening on the labels)
-            if cls == 0 or cls == 1: 
-                fire_active = True
-                
-                # Draw a red bounding box around the fire
+        # Pass the frame directly to YOLOv8
+        results = model(display_frame_tapo, conf=0.60, verbose=False, device=device.type) 
+
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+
+                # Extract bounding box pixel coordinates
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+                # Draw a red bounding box around the validated fire/smoke target
                 cv2.rectangle(display_frame_tapo, (x1, y1), (x2, y2), (0, 0, 255), 3)
                 
-                # Add label and confidence score
-                label = f"Fire: {conf:.2f}"
+                # Overlay label metrics
+                label = f"Fire AI: {conf:.2f}"
                 cv2.putText(display_frame_tapo, label, (x1, y1 - 10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                fire_active = True
 
         # 4. Run Raspberry Pi Fire & Human Detection (Keras) on the Pi Camera frame
         display_frame_pi = None
@@ -333,7 +284,7 @@ if __name__ == '__main__':
             display_frame_pi = frame_pi.copy()
             img_size = 128
             
-            # Preprocess for Fire model (requires manual scaling)
+            # Preprocess for Fire model
             fire_pi_img = cv2.resize(frame_pi, (img_size, img_size))
             fire_pi_img = cv2.cvtColor(fire_pi_img, cv2.COLOR_BGR2RGB)
             fire_pi_img = fire_pi_img.astype(np.float32) / 255.0
@@ -348,7 +299,7 @@ if __name__ == '__main__':
             if fire_pi_pred > 0.5:
                 # 1. Isolate flame colors using HSV thresholding
                 hsv = cv2.cvtColor(frame_pi, cv2.COLOR_BGR2HSV)
-                lower_fire = np.array([0, 50, 50], dtype=np.uint8)     # Broad orange/red range
+                lower_fire = np.array([0, 50, 50], dtype=np.uint8)     
                 upper_fire = np.array([35, 255, 255], dtype=np.uint8)
                 mask = cv2.inRange(hsv, lower_fire, upper_fire)
                 
@@ -361,15 +312,12 @@ if __name__ == '__main__':
                         cx = int(M["m10"] / M["m00"])
                         cy = int(M["m01"] / M["m00"])
                         
-                        # 3. Calculate errors relative to the exact center of the screen
                         h_pi, w_pi = frame_pi.shape[:2]
-                        
-                        # Normalize errors between -1.0 (far left/top) and 1.0 (far right/bottom)
                         norm_error_x = (cx - (w_pi / 2)) / (w_pi / 2)
                         norm_error_y = (cy - (h_pi / 2)) / (h_pi / 2)
                         fire_localized = True
             
-            # Preprocess for Human model (rescaling layer is inside the model)
+            # Preprocess for Human model
             human_pi_img = cv2.resize(frame_pi, (img_size, img_size))
             human_pi_img = cv2.cvtColor(human_pi_img, cv2.COLOR_BGR2RGB)
             human_pi_img = human_pi_img.astype(np.float32)
@@ -402,7 +350,6 @@ if __name__ == '__main__':
             cv2.resizeWindow('Vision Node: Pi Camera AI', 640, 480)
             cv2.imshow('Vision Node: Pi Camera AI', display_frame_pi)
 
-        # Press 'q' to quit
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
