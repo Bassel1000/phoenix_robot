@@ -12,6 +12,8 @@ from flask import Flask, Response
 from flask_cors import CORS
 import webbrowser
 from ultralytics import YOLO
+import paho.mqtt.client as mqtt
+import json
 
 # Load environment variables from a .env file if present
 load_dotenv()
@@ -223,6 +225,28 @@ if __name__ == '__main__':
         if not cap_pi.isOpened():
             print("Failed to open fallback camera 0 for Pi. Models will skip Pi frames.")
 
+    # Initialize MQTT client
+    mqtt_broker = os.environ.get("MQTT_BROKER", "localhost")
+    print(f"Connecting to MQTT Broker at {mqtt_broker}...")
+    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Vision_Node_YOLO")
+    try:
+        mqtt_client.connect(mqtt_broker, 1883, 60)
+        mqtt_client.loop_start()
+        print("MQTT Client connected successfully.")
+    except Exception as e:
+        print(f"Failed to connect to MQTT broker: {e}")
+
+    # Navigation Origin Calibration & Cooldown state
+    robot_start_x = None
+    robot_start_y = None
+    last_heartbeat_time = 0.0
+    last_goal_time = 0.0
+
+    # Latching state for autonomous fire targeting
+    latched_fire_x = None
+    latched_fire_y = None
+    latched_fire_active = False
+
     # Placeholder camera matrix
     placeholder_camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]], dtype=np.float32)
     placeholder_dist_coeffs = np.zeros((4,1))
@@ -230,6 +254,19 @@ if __name__ == '__main__':
     print("Starting Robot Tracking and Fire Detection...")
 
     while True:
+        # STEP A: Send Heartbeat (to keep robot integration watchdog happy)
+        current_time = time.time()
+        if current_time - last_heartbeat_time > 1.0:
+            heartbeat_payload = {
+                "status": "alive",
+                "timestamp": current_time
+            }
+            try:
+                mqtt_client.publish("robot/heartbeat", json.dumps(heartbeat_payload))
+            except Exception:
+                pass
+            last_heartbeat_time = current_time
+
         # Get latest frames instantly
         ret_tapo, frame_tapo = cap_tapo.read()
         ret_pi, frame_pi = False, None
@@ -249,15 +286,32 @@ if __name__ == '__main__':
             marker_length=0.093
         )
 
+        robot_x_map = 0.0
+        robot_y_map = 0.0
+        robot_x = None
+        robot_y = None
+
         if T_matrix is not None:
             robot_x = T_matrix[0, 3]
             robot_y = T_matrix[1, 3]
+            
+            # Calibrate start position on first valid detection to align map frame
+            if robot_start_x is None:
+                robot_start_x = robot_x
+                robot_start_y = robot_y
+                print(f"[CALIBRATION] Robot origin set to camera coordinates ({robot_start_x:.3f}, {robot_start_y:.3f})")
+            
+            robot_x_map = robot_x - robot_start_x
+            robot_y_map = robot_y - robot_start_y
 
         # 3. Run Pre-trained YOLOv8 Fire Detection on the SAME Tapo frame
         fire_active = False # Flag to trigger downstream MQTT pipelines
+        fire_x_target = None
+        fire_y_target = None
+        max_conf = 0.0
         
-        # Pass the frame directly to YOLOv8
-        results = model(display_frame_tapo, conf=0.60, verbose=False, device=device.type) 
+        # Pass the frame directly to YOLOv8 with a lower threshold (0.35) for better screen sensitivity
+        results = model(display_frame_tapo, conf=0.35, verbose=False, device=device.type) 
 
         for r in results:
             boxes = r.boxes
@@ -277,6 +331,93 @@ if __name__ == '__main__':
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
                 fire_active = True
+
+                if conf > max_conf:
+                    max_conf = conf
+                    
+                    # Calculate pixel center of the fire base (where it touches the floor)
+                    u_fire = (x1 + x2) / 2.0
+                    v_fire = y2
+                    
+                    # Pinhole projection mapping to camera coordinate space
+                    z_floor = T_matrix[2, 3] if T_matrix is not None else 2.0
+                    fx = placeholder_camera_matrix[0, 0]
+                    fy = placeholder_camera_matrix[1, 1]
+                    cx = placeholder_camera_matrix[0, 2]
+                    cy = placeholder_camera_matrix[1, 2]
+                    
+                    x_fire_cam = ((u_fire - cx) * z_floor) / fx
+                    y_fire_cam = ((v_fire - cy) * z_floor) / fy
+                    
+                    if robot_start_x is not None:
+                        fire_x_target = x_fire_cam - robot_start_x
+                        fire_y_target = y_fire_cam - robot_start_y
+                    else:
+                        fire_x_target = x_fire_cam - robot_x if robot_x is not None else x_fire_cam
+                        fire_y_target = y_fire_cam - robot_y if robot_y is not None else y_fire_cam
+
+                    # Latch target coordinate in memory
+                    latched_fire_x = fire_x_target
+                    latched_fire_y = fire_y_target
+                    latched_fire_active = True
+
+        # 3.2 Latch override and arrival check
+        if latched_fire_active:
+            # Keep the target locked and fire status active even if detector drops frames
+            fire_active = True
+            fire_x_target = latched_fire_x
+            fire_y_target = latched_fire_y
+            
+            # Check if the robot has arrived at the safe stopping distance
+            d_safe = 0.8  # Stop 80cm away
+            dx = latched_fire_x - robot_x_map
+            dy = latched_fire_y - robot_y_map
+            d_total = np.sqrt(dx**2 + dy**2)
+            
+            # Reset latch once the robot is tracked and successfully arrives at the fire safe area
+            if T_matrix is not None and d_total <= (d_safe + 0.05):
+                print(f"[LATCH CLEAR] Robot reached destination (distance: {d_total:.3f}m). Extinguishing & resetting fire target.")
+                latched_fire_active = False
+                latched_fire_x = None
+                latched_fire_y = None
+                fire_active = False
+
+        # 3.5 Throttle MQTT messages and goal updates (every 2 seconds)
+        if current_time - last_goal_time > 2.0:
+            fire_payload = {
+                "fire": fire_active,
+                "confidence": round(max_conf if max_conf > 0.0 else 0.85, 2),
+                "class": "flame" if fire_active else "none"
+            }
+            try:
+                mqtt_client.publish("robot/fire_detected", json.dumps(fire_payload))
+            except Exception as e:
+                print(f"MQTT publish error (fire_detected): {e}")
+
+            if fire_active and fire_x_target is not None and fire_y_target is not None:
+                d_safe = 0.8  # Stop 80cm away from fire
+                dx = fire_x_target - robot_x_map
+                dy = fire_y_target - robot_y_map
+                d_total = np.sqrt(dx**2 + dy**2)
+                
+                if d_total > d_safe:
+                    x_nav = fire_x_target - (d_safe * dx / d_total)
+                    y_nav = fire_y_target - (d_safe * dy / d_total)
+                else:
+                    x_nav = robot_x_map
+                    y_nav = robot_y_map
+                    
+                nav_payload = {
+                    "x": round(float(x_nav), 3),
+                    "y": round(float(y_nav), 3)
+                }
+                try:
+                    mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
+                    print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f} (Distance left: {d_total:.3f}m)")
+                except Exception as e:
+                    print(f"MQTT publish error (navigation target): {e}")
+            
+            last_goal_time = current_time
 
         # 4. Run Raspberry Pi Fire & Human Detection (Keras) on the Pi Camera frame
         display_frame_pi = None

@@ -8,7 +8,7 @@ class DummyOdomBroadcaster(Node):
     def __init__(self):
         super().__init__('dummy_odom_broadcaster')
         self.br = TransformBroadcaster(self)
-        self.timer = self.create_timer(0.1, self.broadcast_timer_callback) # 10Hz loop
+        self.timer = self.create_timer(0.05, self.broadcast_timer_callback) # 20Hz loop
 
     def broadcast_timer_callback(self):
         t = TransformStamped()
