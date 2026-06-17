@@ -1,36 +1,45 @@
 # Contributor: Bassel Elbahnasy
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool
+from std_msgs.msg import String
 from gpiozero import OutputDevice
-import time
+import paho.mqtt.client as mqtt
+import threading
 
 class PumpController(Node):
     def __init__(self):
         super().__init__('pump_controller')
-        self.get_logger().info("Initializing Phoenix Pump Controller...")
+        self.get_logger().info("Initializing Phoenix Pump Controller (Manual Mode)...")
         
         # The relay for the 24V pump is connected to GPIO 26 
         self.pump_relay = OutputDevice(26, active_high=True, initial_value=False)
         
-        # Subscribe to a topic that signals when the Nav2 goal is reached
-        self.subscription = self.create_subscription(
-            Bool, 
-            'target_reached', 
-            self.target_reached_callback, 
-            10
-        )
+        # MQTT Client Setup for manual control
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Pump_Controller")
+        self.mqtt_client.on_connect = self.on_mqtt_connect
+        self.mqtt_client.on_message = self.on_mqtt_message
+        
+        try:
+            self.mqtt_client.connect("localhost", 1883, 60)
+            self.mqtt_client.loop_start()
+            self.get_logger().info("MQTT client connected for pump control.")
+        except Exception as e:
+            self.get_logger().error(f"Failed to connect to MQTT broker: {e}")
 
-    def target_reached_callback(self, msg):
-        if msg.data:
-            self.get_logger().info("Target reached! Activating 24V water pump...")
-            self.activate_pump(duration=5.0) # Spray for 5 seconds
-            
-    def activate_pump(self, duration):
-        self.pump_relay.on()
-        time.sleep(duration)
-        self.pump_relay.off()
-        self.get_logger().info("Pump deactivated.")
+    def on_mqtt_connect(self, client, userdata, flags, rc, properties):
+        self.get_logger().info("MQTT connected, subscribing to pump commands...")
+        client.subscribe("phoenix/cmd/water")
+
+    def on_mqtt_message(self, client, userdata, msg):
+        command = msg.payload.decode().strip().upper()
+        self.get_logger().info(f"Received pump command: {command}")
+        
+        if command == "ON":
+            self.pump_relay.on()
+            self.get_logger().info("Pump ACTIVATED")
+        elif command == "OFF":
+            self.pump_relay.off()
+            self.get_logger().info("Pump DEACTIVATED")
 
 def main(args=None):
     rclpy.init(args=args)
@@ -40,7 +49,9 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.pump_relay.off() # Ensure pump is off on shutdown
+        node.pump_relay.off()  # Ensure pump is off on shutdown
+        node.mqtt_client.loop_stop()
+        node.mqtt_client.disconnect()
         node.destroy_node()
         rclpy.shutdown()
 

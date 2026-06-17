@@ -158,11 +158,11 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # === MODEL CONFIGURATION SELECTION ===
-    # Option A: Touati Kamel (YOLOv8-Small - Higher accuracy, better for screens/indoor setups)
+    # Option A: Touati Kamel (YOLOv8-Small - Forest fires only, BAD for candles)
     # MODEL_REPO = "touati-kamel/yolov8s-forest-fire-detection"
     # MODEL_FILE = "model.pt"
 
-    # Option B: Rabahdev (YOLOv8-Nano - Fast, but struggles with screen reflections)
+    # Option B: Rabahdev (YOLOv8-Nano - D-Fire dataset: 21K+ mixed indoor/outdoor images, BEST for small flames)
     MODEL_REPO = "rabahdev/fire-smoke-yolov8n"
     MODEL_FILE = "best.pt"
 
@@ -329,82 +329,210 @@ if __name__ == '__main__':
         fire_x_target = None
         fire_y_target = None
         max_conf = 0.0
+        frame_h, frame_w = display_frame_tapo.shape[:2]
+        frame_area = float(frame_h * frame_w)
+        floor_min_y = int(frame_h * 0.55)
+        edge_margin_px = 20
+        max_box_area_ratio = 0.12
+        max_box_width_ratio = 0.35
+        max_box_height_ratio = 0.45
+        use_hsv_fire_fallback = True
         
-        # Pass the frame directly to YOLOv8 with a lower threshold (0.25) for better screen sensitivity
-        results = model(display_frame_tapo, conf=0.25, verbose=False, device=device.type) 
+        # Use a moderate confidence threshold — HSV is the primary candle detector,
+        # YOLO D-Fire acts as secondary. Higher conf reduces false positives on boxes/objects.
+        results = model(display_frame_tapo, conf=0.35, verbose=False, device=device.type)
+        
+        hsv_detected = False
+        hsv_x = None
+        hsv_y = None
 
+        if use_hsv_fire_fallback:
+            # Optional color fallback, disabled by default because yellow robot markings
+            # can look like flame-colored blobs and create false fire targets.
+            hsv = cv2.cvtColor(display_frame_tapo, cv2.COLOR_BGR2HSV)
+            
+            # Tuned for candle flames ONLY (orange-red, NOT golden yellow)
+            # Golden KSIU logo on robot: H~25-35 (yellow) — excluded by H<=18 cutoff
+            # Candle flame: H~0-18 (orange-red), S>=150 (very saturated), V>=200 (glowing)
+            lower_flame1 = np.array([0, 150, 200], dtype=np.uint8)
+            upper_flame1 = np.array([18, 255, 255], dtype=np.uint8)
+            lower_flame2 = np.array([165, 150, 200], dtype=np.uint8)
+            upper_flame2 = np.array([180, 255, 255], dtype=np.uint8)
+            
+            mask1 = cv2.inRange(hsv, lower_flame1, upper_flame1)
+            mask2 = cv2.inRange(hsv, lower_flame2, upper_flame2)
+            mask = cv2.bitwise_or(mask1, mask2)
+            
+            kernel = np.ones((5, 5), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            for contour in sorted(contours, key=cv2.contourArea, reverse=True):
+                area = cv2.contourArea(contour)
+                if area <= 50:
+                    continue
+
+                x1_hsv, y1_hsv, w_hsv, h_hsv = cv2.boundingRect(contour)
+                x2_hsv = x1_hsv + w_hsv
+                y2_hsv = y1_hsv + h_hsv
+                area_ratio = area / frame_area
+
+                # Verify the detected region is actually glowing bright (not just warm-colored)
+                # Extract the V (brightness) channel values inside the contour bounding box
+                roi_v = hsv[y1_hsv:y2_hsv, x1_hsv:x2_hsv, 2]  # V channel
+                if roi_v.size == 0:
+                    continue
+                avg_brightness = float(np.mean(roi_v))
+                if avg_brightness < 210:
+                    # Not bright enough to be a flame — skip (floor tiles are ~120-180)
+                    continue
+
+                if area_ratio > 0.05:
+                    continue
+                if x1_hsv <= edge_margin_px or x2_hsv >= (frame_w - edge_margin_px):
+                    continue
+                
+                if marker_center is not None:
+                    u_center = (x1_hsv + x2_hsv) / 2.0
+                    v_center = (y1_hsv + y2_hsv) / 2.0
+                    dist_px = np.sqrt((u_center - marker_center[0])**2 + (v_center - marker_center[1])**2)
+                    if dist_px < 200:
+                        # Within robot body zone — skip (catches KSIU logo and other markings)
+                        continue
+                
+                # Flame shape check: candle flames are taller than wide, text/logos are wider
+                if h_hsv < w_hsv * 0.8:
+                    continue
+                
+                cv2.rectangle(display_frame_tapo, (x1_hsv, y1_hsv), (x2_hsv, y2_hsv), (0, 255, 0), 2)
+                cv2.putText(display_frame_tapo, "Fire (HSV)", (x1_hsv, y1_hsv - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
+                hsv_center_x = (x1_hsv + x2_hsv) / 2.0
+                hsv_center_y = y2_hsv
+                
+                hsv_detected = True
+                hsv_x = hsv_center_x
+                hsv_y = hsv_center_y
+                break
+        
         for r in results:
             boxes = r.boxes
             for box in boxes:
                 conf = float(box.conf[0])
                 cls = int(box.cls[0])
 
+                # D-Fire model classes: 0=smoke, 1=fire. Only process fire detections.
+                if cls != 1:
+                    continue
+
                 # Extract bounding box pixel coordinates
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
+                box_w = x2 - x1
+                box_h = y2 - y1
+                box_area_ratio = (box_w * box_h) / frame_area
+                box_width_ratio = box_w / float(frame_w)
+                box_height_ratio = box_h / float(frame_h)
 
-                # NEW 2D PIXEL FILTER: Ignore if it overlaps or is too close to the robot's ArUco marker in the image
+                # Ignore giant detections, border-touching detections, and detections floating high in the image.
+                if box_area_ratio > max_box_area_ratio:
+                    continue
+                if box_width_ratio > max_box_width_ratio or box_height_ratio > max_box_height_ratio:
+                    continue
+                if x1 <= edge_margin_px or x2 >= (frame_w - edge_margin_px):
+                    continue
+
+                # 2D PIXEL FILTER: Ignore if it overlaps with the robot's ArUco marker
+                # Reduced to 80px to allow candle detection near the robot
                 if marker_center is not None:
                     u_fire_center = (x1 + x2) / 2.0
                     v_fire_center = (y1 + y2) / 2.0
                     dist_px = np.sqrt((u_fire_center - marker_center[0])**2 + (v_fire_center - marker_center[1])**2)
-                    if dist_px < 350: # 350 pixel radius around the robot's center (increased from 220)
+                    if dist_px < 80:
                         continue
-
-                # Draw a red bounding box around the validated fire/smoke target
-                cv2.rectangle(display_frame_tapo, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                
-                # Overlay label metrics
-                label = f"Fire AI: {conf:.2f}"
-                cv2.putText(display_frame_tapo, label, (x1, y1 - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-
-                fire_active = True
-                last_fire_detect_time = current_time
 
                 if conf > max_conf:
+                    # Draw bounding box for operator visibility (always, even without ArUco)
+                    cv2.rectangle(display_frame_tapo, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                    label = f"Fire AI: {conf:.2f}"
+                    cv2.putText(display_frame_tapo, label, (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                    fire_active = True
+                    last_fire_detect_time = current_time
                     max_conf = conf
-                    
-                    # Calculate pixel center of the fire base (where it touches the floor)
-                    u_fire = (x1 + x2) / 2.0
-                    v_fire = y2
-                    
-                    # Pinhole projection mapping to camera coordinate space
-                    z_floor = T_matrix[2, 3] if T_matrix is not None else 2.0
-                    fx = placeholder_camera_matrix[0, 0]
-                    fy = placeholder_camera_matrix[1, 1]
-                    cx = placeholder_camera_matrix[0, 2]
-                    cy = placeholder_camera_matrix[1, 2]
-                    
-                    x_fire_cam = ((u_fire - cx) * z_floor) / fx
-                    y_fire_cam = ((v_fire - cy) * z_floor) / fy
-                    
-                    if robot_start_x is not None:
+
+                    # Only calculate navigation target if ArUco tracking is active
+                    if T_matrix is not None and robot_start_x is not None:
+                        # Calculate pixel center of the fire base (where it touches the floor)
+                        u_fire = (x1 + x2) / 2.0
+                        v_fire = y2
+                        
+                        # Pinhole projection mapping to camera coordinate space
+                        z_floor = T_matrix[2, 3]
+                        fx = placeholder_camera_matrix[0, 0]
+                        fy = placeholder_camera_matrix[1, 1]
+                        cx = placeholder_camera_matrix[0, 2]
+                        cy = placeholder_camera_matrix[1, 2]
+                        
+                        x_fire_cam = ((u_fire - cx) * z_floor) / fx
+                        y_fire_cam = ((v_fire - cy) * z_floor) / fy
+                        
                         fire_x_target = x_fire_cam - robot_start_x
                         fire_y_target = y_fire_cam - robot_start_y
-                    else:
-                        fire_x_target = x_fire_cam - robot_x if robot_x is not None else x_fire_cam
-                        fire_y_target = y_fire_cam - robot_y if robot_y is not None else y_fire_cam
 
-                    # 3D Map-Space Filter: Ignore targets within 60cm of the starting point (0,0) or current robot position
-                    dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
-                    dist_to_robot = 999.0
-                    if robot_x_map is not None and robot_y_map is not None:
-                        dist_to_robot = np.sqrt((fire_x_target - robot_x_map)**2 + (fire_y_target - robot_y_map)**2)
-                    
-                    if dist_to_start < 0.60 or dist_to_robot < 0.60:
-                        # Skip this detection as it's on top of the robot itself
-                        continue
+                        # 3D Map-Space Filter: Ignore targets too close to robot
+                        dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
+                        dist_to_robot = 999.0
+                        if robot_x_map is not None and robot_y_map is not None:
+                            dist_to_robot = np.sqrt((fire_x_target - robot_x_map)**2 + (fire_y_target - robot_y_map)**2)
+                        
+                        if dist_to_start >= 0.15 and dist_to_robot >= 0.15:
+                            # Latch target coordinate in memory
+                            latched_fire_x = fire_x_target
+                            latched_fire_y = fire_y_target
+                            latched_fire_active = True
+        
+        # ==================== FALLBACK TO HSV DETECTION IF YOLO FOUND NOTHING ====================
+        if not fire_active and hsv_detected and hsv_x is not None and hsv_y is not None:
+            # HSV detected a candle flame — always report fire status to operator
+            fire_active = True
+            last_fire_detect_time = current_time
+            max_conf = 0.5  # Give HSV detection a default confidence
 
-                    # Latch target coordinate in memory
+            # Only calculate navigation target if ArUco tracking is active
+            if T_matrix is not None and robot_start_x is not None:
+                # Convert HSV pixel coordinates to 3D space using pinhole projection
+                z_floor = T_matrix[2, 3]
+                fx = placeholder_camera_matrix[0, 0]
+                fy = placeholder_camera_matrix[1, 1]
+                cx = placeholder_camera_matrix[0, 2]
+                cy = placeholder_camera_matrix[1, 2]
+                
+                x_fire_cam = ((hsv_x - cx) * z_floor) / fx
+                y_fire_cam = ((hsv_y - cy) * z_floor) / fy
+                fire_x_target = x_fire_cam - robot_start_x
+                fire_y_target = y_fire_cam - robot_start_y
+                
+                # Apply 3D distance filter
+                dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
+                dist_to_robot = 999.0
+                if robot_x_map is not None and robot_y_map is not None:
+                    dist_to_robot = np.sqrt((fire_x_target - robot_x_map)**2 + (fire_y_target - robot_y_map)**2)
+                
+                if dist_to_start >= 0.15 and dist_to_robot >= 0.15:
+                    # Latch the HSV detection
                     latched_fire_x = fire_x_target
                     latched_fire_y = fire_y_target
                     latched_fire_active = True
 
         # 3.2 Latch override and arrival check
         if latched_fire_active:
-            # If we haven't seen any fire in the scene for 5 seconds, clear the latch
-            if current_time - last_fire_detect_time > 5.0:
-                print(f"[LATCH TIMEOUT] No fire detected for 5.0 seconds. Clearing latched target.")
+            # If we haven't seen any fire in the scene for 15 seconds, clear the latch
+            # Increased from 5.0 to 15.0 for better reliability
+            if current_time - last_fire_detect_time > 15.0:
+                print(f"[LATCH TIMEOUT] No fire detected for 15.0 seconds. Clearing latched target.")
                 latched_fire_active = False
                 latched_fire_x = None
                 latched_fire_y = None
@@ -416,24 +544,19 @@ if __name__ == '__main__':
                 fire_y_target = latched_fire_y
                 
                 # Check if the robot has arrived at the safe stopping distance
-                d_safe = 0.8  # Stop 80cm away
+                d_safe = 0.3  # Reduced from 0.8m to 0.3m (30cm away) to get closer to the candle
                 dx = latched_fire_x - robot_x_map
                 dy = latched_fire_y - robot_y_map
                 d_total = np.sqrt(dx**2 + dy**2)
                 
-                # Reset latch once the robot is tracked and successfully arrives at the fire safe area
-                if T_matrix is not None and d_total <= (d_safe + 0.05):
-                    print(f"[LATCH CLEAR] Robot reached destination (distance: {d_total:.3f}m). Extinguishing & resetting fire target.")
-                    latched_fire_active = False
-                    latched_fire_x = None
-                    latched_fire_y = None
-                    fire_active = False
+                # Keep latch active so robot stays at target, let you control pump/nozzle manually
+                # (No automatic latch clear - keep target active)
 
         # 3.5 Throttle MQTT messages and goal updates (every 2 seconds)
         if current_time - last_goal_time > 2.0:
             fire_payload = {
                 "fire": fire_active,
-                "confidence": round(max_conf if max_conf > 0.0 else 0.85, 2),
+                "confidence": round(max_conf, 2),
                 "class": "flame" if fire_active else "none"
             }
             try:
@@ -442,33 +565,29 @@ if __name__ == '__main__':
                 print(f"MQTT publish error (fire_detected): {e}")
 
             if fire_active and fire_x_target is not None and fire_y_target is not None:
-                d_safe = 0.8  # Stop 80cm away from fire
-                dx = fire_x_target - robot_x_map
-                dy = fire_y_target - robot_y_map
-                d_total = np.sqrt(dx**2 + dy**2)
-                
-                if d_total > d_safe:
-                    x_nav = fire_x_target - (d_safe * dx / d_total)
-                    y_nav = fire_y_target - (d_safe * dy / d_total)
-                    
-                    nav_payload = {
-                        "x": round(float(x_nav), 3),
-                        "y": round(float(y_nav), 3)
-                    }
-                    try:
-                        mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
-                        print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f} (Distance left: {d_total:.3f}m)")
-                    except Exception as e:
-                        print(f"MQTT publish error (navigation target): {e}")
+                if T_matrix is None:
+                    print("[NAV HOLD] Robot marker lost. Navigation target not published.")
                 else:
-                    pump_payload = {
-                        "activate": True
-                    }
-                    try:
-                        mqtt_client.publish("ambers/robot/pump", json.dumps(pump_payload))
-                        print(f"[AUTONOMOUS PUMP] Robot within safe distance ({d_total:.3f}m <= {d_safe}m). Triggering extinguishing pump!")
-                    except Exception as e:
-                        print(f"MQTT publish error (pump): {e}")
+                    d_safe = 0.3  # Stop 30cm away from candle (reduced from 80cm)
+                    dx = fire_x_target - robot_x_map
+                    dy = fire_y_target - robot_y_map
+                    d_total = np.sqrt(dx**2 + dy**2)
+                    
+                    if d_total > d_safe:
+                        x_nav = fire_x_target - (d_safe * dx / d_total)
+                        y_nav = fire_y_target - (d_safe * dy / d_total)
+                        
+                        nav_payload = {
+                            "x": round(float(x_nav), 3),
+                            "y": round(float(y_nav), 3)
+                        }
+                        try:
+                            mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
+                            print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f} (Distance left: {d_total:.3f}m)")
+                        except Exception as e:
+                            print(f"MQTT publish error (navigation target): {e}")
+                    else:
+                        print(f"[TARGET REACHED] Robot within safe distance ({d_total:.3f}m <= {d_safe}m). Use web UI to control pump/nozzle!")
             
             last_goal_time = current_time
 

@@ -31,7 +31,7 @@ Ensure the Okdo (LD06) LiDAR is connected to the Raspberry Pi 4 GPIO pins exactl
 ---
 
 ## 🚀 Step-by-Step Run Order (Raspberry Pi)
-Open **7 separate terminal windows** on the Raspberry Pi (via SSH). Run the following commands in order:
+Open **9 separate terminal windows** on the Raspberry Pi (via SSH). Run the following commands in order:
 
 ### Terminal 1: Lidar Publisher (Driver)
 Reads raw data from `/dev/ttyAMA0` and publishes `/scan`.
@@ -81,14 +81,73 @@ source ~/ambers_ws/install/setup.bash
 ros2 run phoenix_control mqtt_nav_client
 ```
 
-### Terminal 7: Extinguishing Hardware
-Starts the water pump and fire hose nozzle servos.
+### Terminal 7: Pump Controller
+Starts the manual water pump controller.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
-ros2 run phoenix_control pump_controller &
-ros2 run phoenix_control nozzle_controller &
+ros2 run phoenix_control pump_controller
 ```
+
+### Terminal 8: Nozzle Controller
+Starts the manual fire hose nozzle controller.
+```bash
+export ROS_DOMAIN_ID=30
+source ~/ambers_ws/install/setup.bash
+ros2 run phoenix_control nozzle_controller
+```
+
+### Terminal 9: Pi Camera Stream
+Starts the Raspberry Pi camera streaming script.
+```bash
+cd ~/ambers_ws
+bash ~/ambers_ws/scripts/start_pi_camera_stream.sh
+```
+
+### Terminal 10: MQTT Motor Bridge (For Web UI Control)
+Bridges MQTT motor commands from the Web Command Center to ROS 2 `/cmd_vel`.
+```bash
+export ROS_DOMAIN_ID=30
+source ~/ambers_ws/install/setup.bash
+ros2 run phoenix_control mqtt_motor_bridge
+```
+
+---
+
+## 🌐 Mosquitto WebSocket Setup (Required for Web Dashboard)
+The Web Command Center connects to MQTT via **WebSocket**. Mosquitto must be installed and configured with a WebSocket listener.
+
+1. **Install Mosquitto** (if not already installed) and make sure the configuration directory exists:
+   ```bash
+   sudo apt update
+   sudo apt install -y mosquitto mosquitto-clients
+   sudo mkdir -p /etc/mosquitto/conf.d
+   ```
+
+2. **Edit the Mosquitto configuration** on the Raspberry Pi:
+   ```bash
+   sudo nano /etc/mosquitto/conf.d/websocket.conf
+   ```
+3. **Add the following lines** to the file:
+   ```
+   # Standard MQTT Port for ROS 2 Nodes
+   listener 1883
+   protocol mqtt
+   allow_anonymous true
+
+   # WebSocket Port for Web UI
+   listener 9001
+   protocol websockets
+   allow_anonymous true
+   ```
+4. **Restart Mosquitto**:
+   ```bash
+   sudo systemctl restart mosquitto
+   ```
+5. **Verify WebSocket is listening**:
+   ```bash
+   ss -tlnp | grep 9001
+   ```
 
 ---
 
@@ -100,7 +159,14 @@ Open a terminal on your **Laptop** and launch:
 python3 vision.py
 ```
 
-### 2. Visualize the Map Live (Optional)
+### 2. Web Command Center (Control Pump, Nozzle, Motors)
+Open `Phoenix_Web_Command_Center/index.html` in your browser.
+1. Go to **⚙ Settings** tab
+2. Set **BROKER WS** to `ws://<PI_IP>:9001/mqtt` (replace `<PI_IP>` with your Raspberry Pi's IP)
+3. Click **⚡ CONNECT TO BROKER**
+4. Switch to **MANUAL** mode to access directional controls, pump, and nozzle
+
+### 3. Visualize the Map Live (Optional)
 Configure your laptop to listen to the same ROS 2 network:
 * **Linux:** `export ROS_DOMAIN_ID=30`
 * **Windows (Command Prompt):** `set ROS_DOMAIN_ID=30`
@@ -124,3 +190,4 @@ In RViz2:
 3. **Autonomous Navigation:** Nav2 calculates the safest path using the live map, sending movement commands to `motor_controller` which spins the wheels.
 4. **Target Reached:** Once Nav2 confirms the robot is at the fire location, `mqtt_nav_client` publishes a trigger message.
 5. **Fire Extinguished:** The `pump_controller` and `nozzle_controller` activate the pump and direct the water stream to extinguish the fire.
+6. **Manual Override:** Use the Web Command Center to manually control motors, pump, and nozzle via `mqtt_motor_bridge`.

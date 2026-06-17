@@ -32,6 +32,7 @@ setup(
             'lidar_publisher = phoenix_control.lidar_publisher:main',
             'pump_controller = phoenix_control.pump_controller:main',
             'nozzle_controller = phoenix_control.nozzle_controller:main',
+            'mqtt_motor_bridge = phoenix_control.mqtt_motor_bridge:main',
         ],
     },
 )

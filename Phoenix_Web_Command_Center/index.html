@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600;700;800;900&family=Barlow+Condensed:wght@400;600;700;900&display=swap" rel="stylesheet" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+  <script src="mqtt.min.js"></script>
   <style>
 /* ═══════════════════════════════════════════════
    DESIGN TOKENS
@@ -720,7 +720,17 @@ canvas.chart { width: 100%; height: 64px; }
           <button class="s-btn orange" onclick="sendNavGoal()" style="flex:1;">SEND</button>
         </div>
 
-        <button class="water-btn" id="waterBtn" onclick="pushWater()">💧 PUSH WATER</button>
+        <button class="water-btn" id="waterBtn" onmousedown="pumpOn()" onmouseup="pumpOff()" ontouchstart="pumpOn()" ontouchend="pumpOff()">💧 HOLD TO SPRAY</button>
+
+        <!-- Nozzle Controls -->
+        <div class="dpad-lbl" style="margin-top: 1rem;">▸ NOZZLE CONTROL</div>
+        <div class="dpad" style="margin-bottom: .5rem;">
+          <button class="dpad-btn" onmousedown="nozzleUp()" onmouseup="nozzleStop()" ontouchstart="nozzleUp()" ontouchend="nozzleStop()">▲</button>
+          <button class="dpad-btn" onmousedown="nozzleLeft()" onmouseup="nozzleStop()" ontouchstart="nozzleLeft()" ontouchend="nozzleStop()">◀</button>
+          <button class="dpad-btn stop" onclick="nozzleCenter()">⏺</button>
+          <button class="dpad-btn" onmousedown="nozzleRight()" onmouseup="nozzleStop()" ontouchstart="nozzleRight()" ontouchend="nozzleStop()">▶</button>
+          <button class="dpad-btn" onmousedown="nozzleDown()" onmouseup="nozzleStop()" ontouchstart="nozzleDown()" ontouchend="nozzleStop()">▼</button>
+        </div>
       </div>
     </div>
 
@@ -747,6 +757,61 @@ const camState   = { Surv: null, Robot: null };
 // ── HELPERS ────────────────────────────────────────────────
 const $  = id  => document.getElementById(id);
 const ts = ()  => new Date().toLocaleTimeString('en-GB',{hour12:false});
+
+// ── LOAD ENV CONFIG ────────────────────────────────────────
+async function loadEnvConfig() {
+  const savedBroker = localStorage.getItem('cfgBroker');
+  if (savedBroker) {
+    $('cfgBroker').value = savedBroker;
+    addLog(`Config: Loaded broker URL from storage: ${savedBroker}`, 'info');
+  }
+
+  try {
+    const res = await fetch('../.env');
+    if (!res.ok) return;
+    const text = await res.text();
+    const env = {};
+    text.split(/\r?\n/).forEach(line => {
+      const parts = line.split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        let val = parts.slice(1).join('=').trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        env[key] = val;
+      }
+    });
+
+    let piIp = null;
+    if (env.MQTT_BROKER && env.MQTT_BROKER !== 'localhost' && env.MQTT_BROKER !== '127.0.0.1') {
+      piIp = env.MQTT_BROKER;
+    } else if (env.PI_CAMERA_URL) {
+      const match = env.PI_CAMERA_URL.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
+      if (match) piIp = match[0];
+    }
+
+    if (piIp) {
+      const targetBroker = `ws://${piIp}:9001/mqtt`;
+      addLog(`Config: Found Pi IP (${piIp}) in .env`, 'ok');
+      if (!savedBroker || savedBroker === 'ws://localhost:9001/mqtt') {
+        $('cfgBroker').value = targetBroker;
+        addLog(`Config: Updated broker URL to ${targetBroker}`, 'info');
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch .env file directly (expected on file:// protocol):", e);
+  }
+
+  if ($('cfgBroker').value && $('cfgBroker').value !== 'ws://localhost:9001/mqtt') {
+    setTimeout(() => {
+      if (!mqttClient?.connected) {
+        addLog("Config: Auto-connecting to MQTT broker...");
+        toggleMqtt();
+      }
+    }, 800);
+  }
+}
 
 // ── THEME ──────────────────────────────────────────────────
 let dark = localStorage.getItem('theme') !== 'light';
@@ -827,6 +892,7 @@ function toggleMqtt(){
   }
 
   mqttClient.on('connect', () => {
+    localStorage.setItem('cfgBroker', host);
     setMqttUI('live');
     $('mqttBtn').textContent='🔌 DISCONNECT';
     addLog(`MQTT: connected to ${host}`,'ok');
@@ -1045,13 +1111,44 @@ function sendNavGoal(){
   addLog(`🗺 Nav2 goal sent → x:${x}, y:${y}`,'ok');
 }
 
-function pushWater(){
-  pub($('tWater').value, 'PUSH');
-  $('tv-water').textContent = 'PUSH';
-  const btn = $('waterBtn');
-  btn.classList.add('fired');
-  addLog('💧 PUSH WATER command sent!','fire');
-  setTimeout(()=>btn.classList.remove('fired'),700);
+// Pump Control (hold to spray)
+function pumpOn(){
+  pub($('tWater').value, 'ON');
+  $('tv-water').textContent = 'ON';
+  $('waterBtn').classList.add('fired');
+  addLog('💧 PUMP ON','fire');
+}
+function pumpOff(){
+  pub($('tWater').value, 'OFF');
+  $('tv-water').textContent = 'OFF';
+  $('waterBtn').classList.remove('fired');
+  addLog('💧 PUMP OFF','fire');
+}
+
+// Nozzle Controls
+function nozzleLeft(){
+  pub('phoenix/cmd/nozzle', 'LEFT');
+  addLog('🔧 NOZZLE LEFT','info');
+}
+function nozzleRight(){
+  pub('phoenix/cmd/nozzle', 'RIGHT');
+  addLog('🔧 NOZZLE RIGHT','info');
+}
+function nozzleUp(){
+  pub('phoenix/cmd/nozzle', 'UP');
+  addLog('🔧 NOZZLE UP','info');
+}
+function nozzleDown(){
+  pub('phoenix/cmd/nozzle', 'DOWN');
+  addLog('🔧 NOZZLE DOWN','info');
+}
+function nozzleStop(){
+  pub('phoenix/cmd/nozzle', 'STOP');
+  addLog('🔧 NOZZLE STOP','info');
+}
+function nozzleCenter(){
+  pub('phoenix/cmd/nozzle', 'CENTER');
+  addLog('🔧 NOZZLE CENTER','info');
 }
 
 // ── MODE SWITCH ────────────────────────────────────────────
@@ -1193,7 +1290,13 @@ document.addEventListener('keyup', e => {
 
 addLog('⌨ Keyboard shortcuts active in Manual mode: IJKL,/Arrows=Move, K=Stop, Enter=Water','info');
 </script>
-<script>window.onload = function() { connectCam('Surv'); connectCam('Robot'); };</script>
+<script>
+window.onload = function() {
+  loadEnvConfig();
+  connectCam('Surv');
+  connectCam('Robot');
+};
+</script>
 </body>
 </html>
 

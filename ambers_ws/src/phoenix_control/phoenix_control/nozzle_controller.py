@@ -2,109 +2,125 @@
 # Optimized according to the Phoenix Robot Wiring & GPIO Reference Table
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
-import json
-from gpiozero import ContinuousServo, Servo, OutputDevice
+from gpiozero import Servo
 from gpiozero.pins.pigpio import PiGPIOFactory
-import time
+import paho.mqtt.client as mqtt
 
-class NozzleTrackingController(Node):
+class NozzleController(Node):
     def __init__(self):
-        super().__init__('nozzle_tracking_controller')
-        self.get_logger().info("Initializing Phoenix Servo Nozzle Tracking Node with HW PWM...")
+        super().__init__('nozzle_controller')
+        self.get_logger().info("Initializing Phoenix Nozzle Controller (Manual Mode)...")
         
         # --- Hardware Factory Configuration ---
-        # Using pigpio pin factory to natively leverage the hardware PWM clocks 
-        # specified for GPIO 18 and 13 in image_736bcb.png
         try:
             self.pin_factory = PiGPIOFactory()
-        except IOError:
+        except Exception:
             self.get_logger().warn("pigpio daemon not running! Falling back to software PWM.")
             self.pin_factory = None
         
-        # --- Actuator Allocation from image_736bcb.png ---
-        # 360° Continuous Servo for Horizontal Panning (Yaw) -> GPIO 18 (HW PWM0)
-        self.pan_servo = ContinuousServo(18, initial_value=0.0, pin_factory=self.pin_factory) 
+        # --- Actuator Allocation ---
+        # 360° Continuous Servo for Horizontal Panning (Yaw) -> GPIO 19
+        # Use Servo instead, set min/max pulse widths for continuous rotation
+        try:
+            # Try ContinuousServo first. Start detached so the nozzle does not move on boot.
+            from gpiozero import ContinuousServo
+            self.pan_servo = ContinuousServo(19, initial_value=None, pin_factory=self.pin_factory)
+            self.use_continuous = True
+        except ImportError:
+            # Fall back to Servo for compatibility
+            self.get_logger().warn("ContinuousServo not available, using Servo fallback for pan.")
+            self.pan_servo = Servo(
+                19, 
+                initial_value=None, 
+                min_pulse_width=0.0005, 
+                max_pulse_width=0.0025,
+                pin_factory=self.pin_factory
+            )
+            self.use_continuous = False
         
-        # 180° Standard Servo for Vertical Tilting (Pitch) -> GPIO 13 (HW PWM1)
-        # Pulse width window calibrated to standard 1000μs - 2000μs limits from the reference sheet
+        # 180° Standard Servo for Vertical Tilting (Pitch) -> GPIO 13
         self.tilt_servo = Servo(
             13, 
-            initial_value=0.0, 
+            initial_value=None, 
             min_pulse_width=1/1000, 
             max_pulse_width=2/1000, 
             pin_factory=self.pin_factory
-        ) 
-        
-        # 24V Water Pump Relay -> GPIO 26 (PUMP_CONTROL)
-        self.pump_relay = OutputDevice(26, active_high=True, initial_value=False)
-        
-        # --- Tracking Bounds and Deadzones ---
-        self.current_tilt = 0.0  # Positional baseline (ranges from -1.0 to 1.0)
-        self.deadzone = 0.12     # Precision centering threshold to prevent servo hunting
-        
-        # Subscription to incoming global/local localized fire data payload
-        self.subscription = self.create_subscription(
-            String, 
-            'mqtt_fire_alerts', 
-            self.fire_tracking_callback, 
-            10
         )
+        
+        # --- State ---
+        self.current_tilt = 0.0
+        self.pan_speed = 0.3
+        self.tilt_step = 0.1
 
-    def fire_tracking_callback(self, msg):
+        # Keep both servos idle until the first command arrives.
+        self.release_servos()
+        
+        # --- MQTT Client Setup ---
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Nozzle_Controller")
+        self.mqtt_client.on_connect = self.on_mqtt_connect
+        self.mqtt_client.on_message = self.on_mqtt_message
+        
         try:
-            payload = json.loads(msg.data)
-            
-            # Failsafe: Shut down all tracking and water pressure if no active flame detected
-            if not payload.get("active", False):
-                self.pan_servo.value = 0.0 
-                self.pump_relay.off()
-                return
-
-            error_x = payload.get("error_x", 0.0)
-            error_y = payload.get("error_y", 0.0)
-
-            # --- 1. PAN CONTROL (360° Continuous Servo on GPIO 18) ---
-            if abs(error_x) > self.deadzone:
-                # Proportional velocity assignment. Speed steps scale down as target approaches center
-                # Clamped tightly at +/- 0.35 to prevent severe physical nozzle whipping
-                velocity = error_x * 0.4 
-                self.pan_servo.value = max(-0.35, min(0.35, velocity))
-            else:
-                self.pan_servo.value = 0.0  # Target horizontally aligned. Hard brake velocity loop.
-
-            # --- 2. TILT CONTROL (180° Positional Servo on GPIO 13) ---
-            if abs(error_y) > self.deadzone:
-                # Incremental positional correction step
-                self.current_tilt -= error_y * 0.04 
-                self.current_tilt = max(-1.0, min(1.0, self.current_tilt)) # Enforce mechanical travel stops
-                self.tilt_servo.value = self.current_tilt
-
-            # --- 3. AUTOMATIC SUPPRESSION ENGAGEMENT ---
-            # If the flame centroid is trapped directly within the deadzone box on both coordinates:
-            if abs(error_x) <= self.deadzone and abs(error_y) <= self.deadzone:
-                self.get_logger().info("🎯 TARGET LOCKED: Dispensing suppression payload.")
-                self.pump_relay.on()
-            else:
-                # Kill pump instantly if targeting drifts out of safety limits
-                self.pump_relay.off()
-
+            self.mqtt_client.connect("localhost", 1883, 60)
+            self.mqtt_client.loop_start()
+            self.get_logger().info("MQTT client connected for nozzle control.")
         except Exception as e:
-            self.get_logger().error(f"Error executing tracking callback: {e}")
+            self.get_logger().error(f"Failed to connect to MQTT broker: {e}")
+
+    def on_mqtt_connect(self, client, userdata, flags, rc, properties):
+        self.get_logger().info("MQTT connected, subscribing to nozzle commands...")
+        client.subscribe("phoenix/cmd/nozzle")
+
+    def on_mqtt_message(self, client, userdata, msg):
+        command = msg.payload.decode().strip().upper()
+        self.get_logger().info(f"Received nozzle command: {command}")
+        
+        if command == "LEFT":
+            self.pan_servo.value = -self.pan_speed
+        elif command == "RIGHT":
+            self.pan_servo.value = self.pan_speed
+        elif command == "UP":
+            self.current_tilt = min(1.0, self.current_tilt + self.tilt_step)
+            self.tilt_servo.value = self.current_tilt
+            if self.use_continuous:
+                self.pan_servo.value = 0.0
+        elif command == "DOWN":
+            self.current_tilt = max(-1.0, self.current_tilt - self.tilt_step)
+            self.tilt_servo.value = self.current_tilt
+            if self.use_continuous:
+                self.pan_servo.value = 0.0
+        elif command == "STOP":
+            self.stop_pan()
+        elif command == "CENTER":
+            self.current_tilt = 0.0
+            self.tilt_servo.value = 0.0
+            self.stop_pan()
+
+    def stop_pan(self):
+        # Continuous servo should stop at 0.0. Servo fallback is detached to avoid jitter.
+        if self.use_continuous:
+            self.pan_servo.value = 0.0
+        else:
+            self.pan_servo.detach()
+
+    def release_servos(self):
+        self.pan_servo.detach()
+        self.tilt_servo.detach()
 
 def main(args=None):
     rclpy.init(args=args)
-    node = NozzleTrackingController()
+    node = NozzleController()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        # Emergency hardware safety line clearing
-        node.pan_servo.value = 0.0
-        node.pump_relay.off()
+        node.release_servos()
+        node.mqtt_client.loop_stop()
+        node.mqtt_client.disconnect()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
