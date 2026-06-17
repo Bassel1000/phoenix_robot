@@ -66,8 +66,15 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
     corners, ids, rejected = detector.detectMarkers(image_frame)
 
     transformation_matrix = None
+    marker_center = None
 
     if ids is not None:
+        # Calculate pixel center of the ArUco marker
+        for i in range(len(ids)):
+            if ids[i] == 0:
+                marker_center = np.mean(corners[i][0], axis=0)
+                break
+
         # Define the 3D coordinates of the marker corners in its own coordinate system
         obj_points = np.array([
             [-marker_length/2, marker_length/2, 0],
@@ -100,7 +107,7 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
                 cv2.drawFrameAxes(image_frame, camera_matrix, dist_coeffs, rvec, tvec, 0.05)
                 break # Assuming we only track one robot marker
 
-    return transformation_matrix, image_frame
+    return transformation_matrix, image_frame, marker_center
 
 
 class CameraStream:
@@ -152,12 +159,12 @@ if __name__ == '__main__':
     
     # === MODEL CONFIGURATION SELECTION ===
     # Option A: Touati Kamel (YOLOv8-Small - Higher accuracy, better for screens/indoor setups)
-    MODEL_REPO = "touati-kamel/yolov8s-forest-fire-detection"
-    MODEL_FILE = "model.pt"
+    # MODEL_REPO = "touati-kamel/yolov8s-forest-fire-detection"
+    # MODEL_FILE = "model.pt"
 
     # Option B: Rabahdev (YOLOv8-Nano - Fast, but struggles with screen reflections)
-    # MODEL_REPO = "rabahdev/fire-smoke-yolov8n"
-    # MODEL_FILE = "best.pt"
+    MODEL_REPO = "rabahdev/fire-smoke-yolov8n"
+    MODEL_FILE = "best.pt"
 
     # Option C: SHOU-ISD (YOLOv8-Nano - Alternate dataset)
     # MODEL_REPO = "SHOU-ISD/fire-and-smoke"
@@ -258,6 +265,7 @@ if __name__ == '__main__':
     latched_fire_x = None
     latched_fire_y = None
     latched_fire_active = False
+    last_fire_detect_time = 0.0
 
     # Placeholder camera matrix
     placeholder_camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]], dtype=np.float32)
@@ -291,7 +299,7 @@ if __name__ == '__main__':
             continue
 
         # 2. Run ArUco tracking for the robot kinematics on Tapo
-        T_matrix, display_frame_tapo = calculate_transformation_matrix(
+        T_matrix, display_frame_tapo, marker_center = calculate_transformation_matrix(
             frame_tapo, 
             placeholder_camera_matrix, 
             placeholder_dist_coeffs, 
@@ -322,8 +330,8 @@ if __name__ == '__main__':
         fire_y_target = None
         max_conf = 0.0
         
-        # Pass the frame directly to YOLOv8 with a lower threshold (0.35) for better screen sensitivity
-        results = model(display_frame_tapo, conf=0.35, verbose=False, device=device.type) 
+        # Pass the frame directly to YOLOv8 with a lower threshold (0.25) for better screen sensitivity
+        results = model(display_frame_tapo, conf=0.25, verbose=False, device=device.type) 
 
         for r in results:
             boxes = r.boxes
@@ -334,6 +342,14 @@ if __name__ == '__main__':
                 # Extract bounding box pixel coordinates
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
 
+                # NEW 2D PIXEL FILTER: Ignore if it overlaps or is too close to the robot's ArUco marker in the image
+                if marker_center is not None:
+                    u_fire_center = (x1 + x2) / 2.0
+                    v_fire_center = (y1 + y2) / 2.0
+                    dist_px = np.sqrt((u_fire_center - marker_center[0])**2 + (v_fire_center - marker_center[1])**2)
+                    if dist_px < 350: # 350 pixel radius around the robot's center (increased from 220)
+                        continue
+
                 # Draw a red bounding box around the validated fire/smoke target
                 cv2.rectangle(display_frame_tapo, (x1, y1), (x2, y2), (0, 0, 255), 3)
                 
@@ -343,6 +359,7 @@ if __name__ == '__main__':
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
                 fire_active = True
+                last_fire_detect_time = current_time
 
                 if conf > max_conf:
                     max_conf = conf
@@ -368,6 +385,16 @@ if __name__ == '__main__':
                         fire_x_target = x_fire_cam - robot_x if robot_x is not None else x_fire_cam
                         fire_y_target = y_fire_cam - robot_y if robot_y is not None else y_fire_cam
 
+                    # 3D Map-Space Filter: Ignore targets within 60cm of the starting point (0,0) or current robot position
+                    dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
+                    dist_to_robot = 999.0
+                    if robot_x_map is not None and robot_y_map is not None:
+                        dist_to_robot = np.sqrt((fire_x_target - robot_x_map)**2 + (fire_y_target - robot_y_map)**2)
+                    
+                    if dist_to_start < 0.60 or dist_to_robot < 0.60:
+                        # Skip this detection as it's on top of the robot itself
+                        continue
+
                     # Latch target coordinate in memory
                     latched_fire_x = fire_x_target
                     latched_fire_y = fire_y_target
@@ -375,24 +402,32 @@ if __name__ == '__main__':
 
         # 3.2 Latch override and arrival check
         if latched_fire_active:
-            # Keep the target locked and fire status active even if detector drops frames
-            fire_active = True
-            fire_x_target = latched_fire_x
-            fire_y_target = latched_fire_y
-            
-            # Check if the robot has arrived at the safe stopping distance
-            d_safe = 0.8  # Stop 80cm away
-            dx = latched_fire_x - robot_x_map
-            dy = latched_fire_y - robot_y_map
-            d_total = np.sqrt(dx**2 + dy**2)
-            
-            # Reset latch once the robot is tracked and successfully arrives at the fire safe area
-            if T_matrix is not None and d_total <= (d_safe + 0.05):
-                print(f"[LATCH CLEAR] Robot reached destination (distance: {d_total:.3f}m). Extinguishing & resetting fire target.")
+            # If we haven't seen any fire in the scene for 5 seconds, clear the latch
+            if current_time - last_fire_detect_time > 5.0:
+                print(f"[LATCH TIMEOUT] No fire detected for 5.0 seconds. Clearing latched target.")
                 latched_fire_active = False
                 latched_fire_x = None
                 latched_fire_y = None
                 fire_active = False
+            else:
+                # Keep the target locked and fire status active even if detector drops frames
+                fire_active = True
+                fire_x_target = latched_fire_x
+                fire_y_target = latched_fire_y
+                
+                # Check if the robot has arrived at the safe stopping distance
+                d_safe = 0.8  # Stop 80cm away
+                dx = latched_fire_x - robot_x_map
+                dy = latched_fire_y - robot_y_map
+                d_total = np.sqrt(dx**2 + dy**2)
+                
+                # Reset latch once the robot is tracked and successfully arrives at the fire safe area
+                if T_matrix is not None and d_total <= (d_safe + 0.05):
+                    print(f"[LATCH CLEAR] Robot reached destination (distance: {d_total:.3f}m). Extinguishing & resetting fire target.")
+                    latched_fire_active = False
+                    latched_fire_x = None
+                    latched_fire_y = None
+                    fire_active = False
 
         # 3.5 Throttle MQTT messages and goal updates (every 2 seconds)
         if current_time - last_goal_time > 2.0:
@@ -415,19 +450,25 @@ if __name__ == '__main__':
                 if d_total > d_safe:
                     x_nav = fire_x_target - (d_safe * dx / d_total)
                     y_nav = fire_y_target - (d_safe * dy / d_total)
-                else:
-                    x_nav = robot_x_map
-                    y_nav = robot_y_map
                     
-                nav_payload = {
-                    "x": round(float(x_nav), 3),
-                    "y": round(float(y_nav), 3)
-                }
-                try:
-                    mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
-                    print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f} (Distance left: {d_total:.3f}m)")
-                except Exception as e:
-                    print(f"MQTT publish error (navigation target): {e}")
+                    nav_payload = {
+                        "x": round(float(x_nav), 3),
+                        "y": round(float(y_nav), 3)
+                    }
+                    try:
+                        mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
+                        print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f} (Distance left: {d_total:.3f}m)")
+                    except Exception as e:
+                        print(f"MQTT publish error (navigation target): {e}")
+                else:
+                    pump_payload = {
+                        "activate": True
+                    }
+                    try:
+                        mqtt_client.publish("ambers/robot/pump", json.dumps(pump_payload))
+                        print(f"[AUTONOMOUS PUMP] Robot within safe distance ({d_total:.3f}m <= {d_safe}m). Triggering extinguishing pump!")
+                    except Exception as e:
+                        print(f"MQTT publish error (pump): {e}")
             
             last_goal_time = current_time
 

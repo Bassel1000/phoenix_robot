@@ -5,62 +5,51 @@ from sensor_msgs.msg import LaserScan
 from rclpy.qos import qos_profile_sensor_data
 import serial
 import math
+import threading
+import time
 
 class LidarPublisher(Node):
     def __init__(self):
         super().__init__('lidar_publisher')
-        self.get_logger().info("Initializing Okdo LiDAR Publisher...")
+        self.get_logger().info("Initializing Decoupled Okdo LiDAR Publisher...")
         
         self.publisher_ = self.create_publisher(LaserScan, 'scan', qos_profile_sensor_data)
         
-        # Standard UART setup for Raspberry Pi GPIO serial
-        self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=0.1)
+        # Use a short timeout of 10ms for non-blocking serial reads
+        self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=0.01)
         
-        # Buffer to hold incomplete serial frames
+        # Buffer and ranges configuration
         self.serial_buffer = bytearray()
-        
-        # Array to hold the most recent distance for 360 discrete degrees
         self.current_ranges = [0.0] * 360 
         
-        # Timer to read serial and publish at ~10Hz
+        # Background thread setup for reading and parsing
+        self.running = True
+        self.read_thread = threading.Thread(target=self.read_loop)
+        self.read_thread.daemon = True
+        self.read_thread.start()
+        
+        # ROS 2 Timer for stable 10Hz publishing
         self.timer = self.create_timer(0.1, self.publish_scan)
- 
-    def publish_scan(self):
-        # Read blockingly if the buffer is empty to avoid dropping timer cycles
-        in_waiting = self.serial_port.in_waiting
-        if in_waiting > 0:
-            raw_data = self.serial_port.read(in_waiting)
-        else:
-            raw_data = self.serial_port.read(1) # Block for up to 100ms
-            if not raw_data:
-                return
-            # Append any bytes that arrived immediately after the block
-            raw_data += self.serial_port.read(self.serial_port.in_waiting)
- 
-        # Decode the byte stream
-        ranges = self.parse_lidar_data(raw_data) 
-        
-        scan_msg = LaserScan()
-        scan_msg.header.stamp = self.get_clock().now().to_msg()
-        scan_msg.header.frame_id = 'lidar_link'
-        scan_msg.angle_min = 0.0
-        scan_msg.angle_max = 2 * math.pi
-        
-        # 1 degree increment in radians
-        scan_msg.angle_increment = math.pi / 180.0 
-        
-        scan_msg.range_min = 0.35 # Calibrated to ignore robot chassis
-        scan_msg.range_max = 10.0  # 10m max distance
-        scan_msg.ranges = ranges
-        
-        self.publisher_.publish(scan_msg)
+
+    def read_loop(self):
+        while self.running and rclpy.ok():
+            try:
+                # Read all available bytes from serial
+                in_waiting = self.serial_port.in_waiting
+                if in_waiting > 0:
+                    raw_bytes = self.serial_port.read(in_waiting)
+                    self.parse_lidar_data(raw_bytes)
+                else:
+                    time.sleep(0.005) # Sleep 5ms to keep CPU low
+            except Exception as e:
+                self.get_logger().error(f"Error in LiDAR read loop: {e}")
+                time.sleep(0.1)
 
     def parse_lidar_data(self, raw_bytes):
         self.serial_buffer.extend(raw_bytes)
         
-        # Process as long as we have at least one full packet
+        # Process as long as we have at least one full packet (47 bytes)
         while len(self.serial_buffer) >= 47:
-            # Look for the header (0x54) and length (0x2C)
             if self.serial_buffer[0] == 0x54 and self.serial_buffer[1] == 0x2C:
                 packet = self.serial_buffer[:47]
                 
@@ -77,22 +66,15 @@ class LidarPublisher(Node):
                 # Extract the 12 distance measurements
                 for i in range(12):
                     point_angle = (start_angle + i * step) % 360.0
-                    
-                    # Each point is 3 bytes (2 distance, 1 intensity) starting at index 6
                     idx = 6 + i * 3
                     distance_mm = int.from_bytes(packet[idx:idx+2], byteorder='little')
-                    
-                    # Convert to meters
                     distance_m = distance_mm / 1000.0
                     
-                    # Map to the nearest integer degree index (0-359)
                     degree_idx = int(round(point_angle)) % 360
                     self.current_ranges[degree_idx] = distance_m
                 
-                # Pop the successfully parsed packet from the buffer
                 self.serial_buffer = self.serial_buffer[47:]
             else:
-                # Instantly locate the next valid packet header signature
                 try:
                     next_header = self.serial_buffer.index(0x54)
                     if next_header > 0:
@@ -100,11 +82,22 @@ class LidarPublisher(Node):
                     else:
                         self.serial_buffer.pop(0)
                 except ValueError:
-                    # Clear buffer completely if header signature is totally missing
                     self.serial_buffer.clear()
                     break
-                
-        return self.current_ranges
+
+    def publish_scan(self):
+        scan_msg = LaserScan()
+        # Use the ROS node clock for timing
+        scan_msg.header.stamp = self.get_clock().now().to_msg()
+        scan_msg.header.frame_id = 'lidar_link'
+        scan_msg.angle_min = 0.0
+        scan_msg.angle_max = 2 * math.pi
+        scan_msg.angle_increment = math.pi / 180.0 
+        scan_msg.range_min = 0.35 
+        scan_msg.range_max = 10.0  
+        scan_msg.ranges = list(self.current_ranges) # Make a copy to avoid concurrent writes
+        
+        self.publisher_.publish(scan_msg)
 
 def main(args=None):
     rclpy.init(args=args)
@@ -114,6 +107,9 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node.running = False
+        if hasattr(node, 'read_thread'):
+            node.read_thread.join(timeout=1.0)
         node.serial_port.close()
         node.destroy_node()
         rclpy.shutdown()

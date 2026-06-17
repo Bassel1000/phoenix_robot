@@ -3,6 +3,7 @@ import os
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.time import Time
 from nav2_msgs.action import NavigateToPose
 from std_msgs.msg import Bool
 import paho.mqtt.client as mqtt
@@ -41,12 +42,28 @@ class MqttNavClient(Node):
     def on_connect(self, client, userdata, flags, rc, properties):
         self.get_logger().info(f"Connected to Local Broker with result code {rc}")
         client.subscribe("ambers/robot/navigation/target") # Update topic as needed
+        client.subscribe("ambers/robot/pump")
 
     def on_message(self, client, userdata, msg):
-        self.get_logger().info(f"Received MQTT Message: {msg.payload.decode()}")
+        self.get_logger().info(f"Received MQTT Message on {msg.topic}: {msg.payload.decode()}")
         try:
-            # Expecting JSON payload: {"x": 2.5, "y": 1.2}
             data = json.loads(msg.payload.decode())
+            
+            if msg.topic == "ambers/robot/pump":
+                trigger = data.get("activate", False)
+                if trigger:
+                    self.get_logger().info("Received MQTT Pump trigger. Activating pump...")
+                    # Cancel any active goal if we are triggering the pump directly
+                    if self.current_goal_handle is not None:
+                        self.get_logger().info("Canceling active Nav2 goal before starting pump...")
+                        self.current_goal_handle.cancel_goal_async()
+                    
+                    msg_out = Bool()
+                    msg_out.data = True
+                    self.pump_trigger.publish(msg_out)
+                return
+            
+            # Expecting JSON payload: {"x": 2.5, "y": 1.2}
             target_x = float(data.get("x", 0.0))
             target_y = float(data.get("y", 0.0))
             
@@ -75,7 +92,8 @@ class MqttNavClient(Node):
         
         goal_msg = NavigateToPose.Goal()
         goal_msg.pose.header.frame_id = 'map'
-        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+        # Set stamp to 0 to avoid TF extrapolation errors across clock jumps/drift
+        goal_msg.pose.header.stamp = Time().to_msg()
         goal_msg.pose.pose.position.x = x
         goal_msg.pose.pose.position.y = y
         goal_msg.pose.pose.orientation.w = 1.0 # Assuming facing forward is fine

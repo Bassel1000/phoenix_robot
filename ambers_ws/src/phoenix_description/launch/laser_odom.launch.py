@@ -42,7 +42,7 @@ def generate_launch_description():
             'laser_scan_topic': '/scan',
             'odom_topic': '/odom',
             'publish_tf': True,
-            'base_frame_id': 'base_link',
+            'base_frame_id': 'base_footprint',
             'odom_frame_id': 'odom',
             'laser_frame_id': 'lidar_link', # Must match the frame name in your URDF/LiDAR driver
             'init_pose_from_topic': '',      # Crucial: Disable waiting for ground truth pose
