@@ -14,13 +14,18 @@ class PumpController(Node):
         # The relay for the 24V pump is connected to GPIO 26 
         self.pump_relay = OutputDevice(26, active_high=True, initial_value=False)
         
-        # MQTT Client Setup for manual control
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Pump_Controller")
+        # MQTT Client Setup for manual control (Supports both paho-mqtt v1.x and v2.x)
+        try:
+            self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Pump_Controller")
+        except AttributeError:
+            self.mqtt_client = mqtt.Client(client_id="Pump_Controller")
         self.mqtt_client.on_connect = self.on_mqtt_connect
         self.mqtt_client.on_message = self.on_mqtt_message
         
+        import os
+        broker_ip = os.environ.get('MQTT_BROKER_IP', 'localhost')
         try:
-            self.mqtt_client.connect("localhost", 1883, 60)
+            self.mqtt_client.connect(broker_ip, 1883, 60)
             self.mqtt_client.loop_start()
             self.get_logger().info("MQTT client connected for pump control.")
         except Exception as e:

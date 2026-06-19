@@ -31,10 +31,21 @@ Ensure the Okdo (LD06) LiDAR is connected to the Raspberry Pi 4 GPIO pins exactl
 ---
 
 ## 🚀 Step-by-Step Run Order (Raspberry Pi)
-Open **10 separate terminal windows** on the Raspberry Pi (via SSH). Run the following commands in order:
+
+You can launch all the robot nodes (lidar, navigation, SLAM, motor controllers, camera, etc.) simultaneously using the unified bringup launch file. Open **1 terminal** on the Raspberry Pi (via SSH) and run:
+
+```bash
+export ROS_DOMAIN_ID=30
+source ~/ambers_ws/install/setup.bash
+ros2 launch phoenix_description phoenix_bringup.launch.py
+```
+
+<details>
+<summary><b>🛠️ Manual Debugging Mode (10 Terminals)</b></summary>
+
+If you need to debug specific nodes, you can still run them in separate terminal windows:
 
 ### Terminal 1: Lidar Publisher (Driver)
-Reads raw data from `/dev/ttyAMA0` and publishes `/scan`.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
@@ -42,7 +53,6 @@ ros2 run phoenix_control lidar_publisher
 ```
 
 ### Terminal 2: Laser Odometry & Transforms
-Publishes the physical transforms (`base_link -> lidar_link`) and computes odometry (`odom -> base_link`) from the Lidar.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
@@ -50,7 +60,6 @@ ros2 launch phoenix_description laser_odom.launch.py
 ```
 
 ### Terminal 3: SLAM Toolbox (Dynamic Mapping)
-Generates the map on the fly and publishes the `map -> odom` transform.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
@@ -58,15 +67,13 @@ ros2 launch slam_toolbox online_async_launch.py slam_params_file:=/home/ambers/a
 ```
 
 ### Terminal 4: Nav2 Stack
-Runs the costmaps, path planners, and velocity controllers.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
 ros2 launch nav2_bringup navigation_launch.py use_sim_time:=False
 ```
 
-### Terminal 5: Motor Controller (BTS7960 Driver)
-Translates Nav2 velocities (`/cmd_vel`) into PWM voltages to physically drive the motors.
+### Terminal 5: Motor Controller
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
@@ -74,7 +81,6 @@ ros2 run phoenix_control motor_controller
 ```
 
 ### Terminal 6: MQTT Navigation Client
-Listens for target coordinates from the laptop over MQTT and triggers Nav2 goals.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
@@ -82,7 +88,6 @@ ros2 run phoenix_control mqtt_nav_client
 ```
 
 ### Terminal 7: Pump Controller
-Starts the manual water pump controller.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
@@ -90,7 +95,6 @@ ros2 run phoenix_control pump_controller
 ```
 
 ### Terminal 8: Nozzle Controller
-Starts the manual fire hose nozzle controller.
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
@@ -98,19 +102,18 @@ ros2 run phoenix_control nozzle_controller
 ```
 
 ### Terminal 9: Pi Camera Stream
-Starts the Raspberry Pi camera streaming script.
 ```bash
 cd ~/ambers_ws
 bash ~/ambers_ws/scripts/start_pi_camera_stream.sh
 ```
 
-### Terminal 10: MQTT Motor Bridge (For Web UI Control)
-Bridges MQTT motor commands from the Web Command Center to ROS 2 `/cmd_vel`.
+### Terminal 10: MQTT Motor Bridge
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
 ros2 run phoenix_control mqtt_motor_bridge
 ```
+</details>
 
 ---
 

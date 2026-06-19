@@ -12,7 +12,7 @@ class MotorController(Node):
         # ------- MOTOR HARDWARE CONFIGURATION -------
         # If your robot spins when you tell it to go straight, or goes the wrong way, 
         # change these Booleans to True/False until it drives perfectly.
-        self.swap_left_and_right = True   # Change from False to True
+        self.swap_left_and_right = False  # Changed to fix inverted steering
         self.invert_left         = True   # Change from False to True
         self.invert_right        = False  # Keep this False
         # --------------------------------------------
@@ -70,10 +70,14 @@ class MotorController(Node):
         
         # Implement true inverse kinematics from Section 10.2
         B = 0.35   # Track Width
-        V_max = 2.246 # Theoretical Max Linear Speed at 100% PWM
+        V_max = 1.5 # Lowered from 2.246 to increase overall PWM power for the heavy robot
 
-        v_l = self.current_linear - (self.current_angular * B / 2.0)
-        v_r = self.current_linear + (self.current_angular * B / 2.0)
+        # Skid-steer robots require huge torque to overcome lateral wheel friction when turning.
+        # We amplify the angular command specifically to break static friction.
+        skid_steer_turn_boost = 3.0 
+
+        v_l = self.current_linear - (self.current_angular * B / 2.0 * skid_steer_turn_boost)
+        v_r = self.current_linear + (self.current_angular * B / 2.0 * skid_steer_turn_boost)
 
         # Convert target linear m/s velocities to normalized PWM percentage [-1.0 to 1.0]
         left_speed = v_l / V_max

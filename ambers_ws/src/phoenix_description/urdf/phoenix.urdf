@@ -152,7 +152,7 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="-0.120 0 0.210" rpy="0 0 0"/>
+    <origin xyz="0.100 0 0.300" rpy="0 0 0"/>
   </joint>
   <gazebo reference="lidar_link">
     <material>Gazebo/Black</material>

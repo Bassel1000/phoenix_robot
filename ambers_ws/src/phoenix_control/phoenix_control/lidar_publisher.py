@@ -71,7 +71,12 @@ class LidarPublisher(Node):
                     distance_m = distance_mm / 1000.0
                     
                     degree_idx = int(round(point_angle)) % 360
-                    self.current_ranges[degree_idx] = distance_m
+                    
+                    # Filter out the robot's own nozzle and pump at the front (-15 to +15 degrees)
+                    if degree_idx <= 15 or degree_idx >= 345:
+                        self.current_ranges[degree_idx] = float('inf') # Mark as clear space
+                    else:
+                        self.current_ranges[degree_idx] = distance_m
                 
                 self.serial_buffer = self.serial_buffer[47:]
             else:

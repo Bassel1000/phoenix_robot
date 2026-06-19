@@ -14,7 +14,7 @@ import webbrowser
 from ultralytics import YOLO
 import paho.mqtt.client as mqtt
 import json
-
+import math
 # Load environment variables from a .env file if present
 load_dotenv()
 
@@ -69,9 +69,10 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
     marker_center = None
 
     if ids is not None:
+        valid_robot_ids = [0, 1, 2, 3]
         # Calculate pixel center of the ArUco marker
         for i in range(len(ids)):
-            if ids[i] == 0:
+            if ids[i][0] in valid_robot_ids:
                 marker_center = np.mean(corners[i][0], axis=0)
                 break
 
@@ -83,8 +84,11 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
             [-marker_length/2, -marker_length/2, 0]
         ], dtype=np.float32)
 
-        # Iterate through detected markers (assuming ID 0 is the robot)
+        # Iterate through detected markers
         for i in range(len(ids)):
+            if ids[i][0] not in valid_robot_ids:
+                continue
+                
             # Solve PnP to get the rotation and translation vectors
             success, rvec, tvec = cv2.solvePnP(
                 obj_points, corners[i], camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_IPPE_SQUARE
@@ -105,7 +109,7 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
 
                 # Draw axes on the marker for visual debugging
                 cv2.drawFrameAxes(image_frame, camera_matrix, dist_coeffs, rvec, tvec, 0.05)
-                break # Assuming we only track one robot marker
+                break # We only need to track one valid robot marker at a time
 
     return transformation_matrix, image_frame, marker_center
 
@@ -192,18 +196,18 @@ if __name__ == '__main__':
     browser_thread.daemon = True
     browser_thread.start()
 
-    # 1.1 Load the Keras Models for Raspberry Pi (Fire and Human)
-    print("Loading Raspberry Pi Fire and Human Detection models...")
-    fire_model_pi_path = os.path.join(current_dir, "Fire_Detection_Raspberry_Pi", "fire_robust_model.h5")
+    # 1.1 Load the Keras Models for Raspberry Pi (Fall and Human)
+    print("Loading Raspberry Pi Fall and Human Detection models...")
+    fall_model_pi_path = os.path.join(current_dir, "Fall_Detection", "fall_detection_scratch.h5")
     human_model_pi_path = os.path.join(current_dir, "Human_Detection", "human.h5")
     
     try:
-        fire_model_pi = tf.keras.models.load_model(fire_model_pi_path)
+        fall_model_pi = tf.keras.models.load_model(fall_model_pi_path)
         human_model_pi = tf.keras.models.load_model(human_model_pi_path)
         print("Raspberry Pi models loaded successfully.")
     except Exception as e:
         print(f"Error loading Keras models: {e}")
-        fire_model_pi, human_model_pi = None, None
+        fall_model_pi, human_model_pi = None, None
 
     # Initialize cameras (Tapo C210 via RTSP)
     tapo_rtsp_url = os.environ.get("RTSP_URL") 
@@ -303,16 +307,16 @@ if __name__ == '__main__':
 
         if T_matrix is not None:
             robot_x = T_matrix[0, 3]
-            robot_y = T_matrix[1, 3]
+            robot_z = T_matrix[2, 3] # Use Camera Z (depth) for Map Y
             
             # Calibrate start position on first valid detection to align map frame
             if robot_start_x is None:
                 robot_start_x = robot_x
-                robot_start_y = robot_y
+                robot_start_y = robot_z
                 print(f"[CALIBRATION] Robot origin set to camera coordinates ({robot_start_x:.3f}, {robot_start_y:.3f})")
             
             robot_x_map = robot_x - robot_start_x
-            robot_y_map = robot_y - robot_start_y
+            robot_y_map = robot_z - robot_start_y
 
         # 3. Run Pre-trained YOLOv8 Fire Detection on the SAME Tapo frame
         fire_active = False # Flag to trigger downstream MQTT pipelines
@@ -326,7 +330,7 @@ if __name__ == '__main__':
         max_box_area_ratio = 0.12
         max_box_width_ratio = 0.35
         max_box_height_ratio = 0.45
-        use_hsv_fire_fallback = True
+        use_hsv_fire_fallback = True  # Re-enabled for testing with mobile screens
         
         # Use a moderate confidence threshold — HSV is the primary candle detector,
         # YOLO D-Fire acts as secondary. Higher conf reduces false positives on boxes/objects.
@@ -337,8 +341,7 @@ if __name__ == '__main__':
         hsv_y = None
 
         if use_hsv_fire_fallback:
-            # Optional color fallback, disabled by default because yellow robot markings
-            # can look like flame-colored blobs and create false fire targets.
+            # Optional color fallback, re-enabled for testing with mobile screens
             hsv = cv2.cvtColor(display_frame_tapo, cv2.COLOR_BGR2HSV)
             
             # Tuned for candle flames ONLY (orange-red, NOT golden yellow)
@@ -387,8 +390,8 @@ if __name__ == '__main__':
                     u_center = (x1_hsv + x2_hsv) / 2.0
                     v_center = (y1_hsv + y2_hsv) / 2.0
                     dist_px = np.sqrt((u_center - marker_center[0])**2 + (v_center - marker_center[1])**2)
-                    if dist_px < 200:
-                        # Within robot body zone — skip (catches KSIU logo and other markings)
+                    if dist_px < 400:
+                        # Within robot body zone — skip (increased to 400 to cover the whole chassis)
                         continue
                 
                 # Flame shape check: candle flames are taller than wide, text/logos are wider
@@ -467,10 +470,9 @@ if __name__ == '__main__':
                         cy = placeholder_camera_matrix[1, 2]
                         
                         x_fire_cam = ((u_fire - cx) * z_floor) / fx
-                        y_fire_cam = ((v_fire - cy) * z_floor) / fy
                         
                         fire_x_target = x_fire_cam - robot_start_x
-                        fire_y_target = y_fire_cam - robot_start_y
+                        fire_y_target = 0.0 # Force robot to drive straight toward X
 
                         # 3D Map-Space Filter: Ignore targets too close to robot
                         dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
@@ -501,9 +503,8 @@ if __name__ == '__main__':
                 cy = placeholder_camera_matrix[1, 2]
                 
                 x_fire_cam = ((hsv_x - cx) * z_floor) / fx
-                y_fire_cam = ((hsv_y - cy) * z_floor) / fy
                 fire_x_target = x_fire_cam - robot_start_x
-                fire_y_target = y_fire_cam - robot_start_y
+                fire_y_target = 0.0 # Force robot to drive straight toward X
                 
                 # Apply 3D distance filter
                 dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
@@ -566,10 +567,12 @@ if __name__ == '__main__':
                     if d_total > d_safe:
                         x_nav = fire_x_target - (d_safe * dx / d_total)
                         y_nav = fire_y_target - (d_safe * dy / d_total)
+                        yaw_nav = math.atan2(dy, dx)
                         
                         nav_payload = {
                             "x": round(float(x_nav), 3),
-                            "y": round(float(y_nav), 3)
+                            "y": round(float(y_nav), 3),
+                            "yaw": round(float(yaw_nav), 3)
                         }
                         try:
                             mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
@@ -581,44 +584,19 @@ if __name__ == '__main__':
             
             last_goal_time = current_time
 
-        # 4. Run Raspberry Pi Fire & Human Detection (Keras) on the Pi Camera frame
+        # 4. Run Raspberry Pi Fall & Human Detection (Keras) on the Pi Camera frame
         display_frame_pi = None
-        if ret_pi and frame_pi is not None and fire_model_pi is not None and human_model_pi is not None:
+        if ret_pi and frame_pi is not None and fall_model_pi is not None and human_model_pi is not None:
             display_frame_pi = frame_pi.copy()
             img_size = 128
             
-            # Preprocess for Fire model
-            fire_pi_img = cv2.resize(frame_pi, (img_size, img_size))
-            fire_pi_img = cv2.cvtColor(fire_pi_img, cv2.COLOR_BGR2RGB)
-            fire_pi_img = fire_pi_img.astype(np.float32) / 255.0
-            fire_pi_input = np.expand_dims(fire_pi_img, axis=0)
+            # Preprocess for Fall model
+            fall_pi_img = cv2.resize(frame_pi, (img_size, img_size))
+            fall_pi_img = cv2.cvtColor(fall_pi_img, cv2.COLOR_BGR2RGB)
+            fall_pi_img = fall_pi_img.astype(np.float32) / 255.0
+            fall_pi_input = np.expand_dims(fall_pi_img, axis=0)
             
-            fire_pi_pred = fire_model_pi.predict(fire_pi_input, verbose=0)[0][0]
-
-            norm_error_x = 0.0
-            norm_error_y = 0.0
-            fire_localized = False
-
-            if fire_pi_pred > 0.5:
-                # 1. Isolate flame colors using HSV thresholding
-                hsv = cv2.cvtColor(frame_pi, cv2.COLOR_BGR2HSV)
-                lower_fire = np.array([0, 50, 50], dtype=np.uint8)     
-                upper_fire = np.array([35, 255, 255], dtype=np.uint8)
-                mask = cv2.inRange(hsv, lower_fire, upper_fire)
-                
-                # 2. Find contours to find the center of the flame
-                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if contours:
-                    largest_contour = max(contours, key=cv2.contourArea)
-                    M = cv2.moments(largest_contour)
-                    if M["m00"] != 0:
-                        cx = int(M["m10"] / M["m00"])
-                        cy = int(M["m01"] / M["m00"])
-                        
-                        h_pi, w_pi = frame_pi.shape[:2]
-                        norm_error_x = (cx - (w_pi / 2)) / (w_pi / 2)
-                        norm_error_y = (cy - (h_pi / 2)) / (h_pi / 2)
-                        fire_localized = True
+            fall_pi_pred = fall_model_pi.predict(fall_pi_input, verbose=0)[0][0]
             
             # Preprocess for Human model
             human_pi_img = cv2.resize(frame_pi, (img_size, img_size))
@@ -630,7 +608,7 @@ if __name__ == '__main__':
             
             # Draw labels for Keras models
             font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(display_frame_pi, f"Pi Fire: {fire_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fire_pi_pred > 0.5 else (0, 255, 0), 2)
+            cv2.putText(display_frame_pi, f"Pi Fall: {fall_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fall_pi_pred > 0.5 else (0, 255, 0), 2)
             cv2.putText(display_frame_pi, f"Pi Human: {human_pi_pred:.2f}", (10, 60), font, 0.8, (255, 0, 0) if human_pi_pred > 0.5 else (0, 255, 0), 2)
 
         # Update global frames for Flask stream

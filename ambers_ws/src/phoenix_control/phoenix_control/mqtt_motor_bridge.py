@@ -14,8 +14,8 @@ class MqttMotorBridge(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         
         # Speed configuration
-        self.linear_speed = 0.25   # m/s forward/backward
-        self.angular_speed = 0.5   # rad/s left/right
+        self.linear_speed = 1.0   # Increased from 0.25 to 1.0 for the heavy robot
+        self.angular_speed = 1.0  # Increased from 0.5 to 1.0
         
         # Safety: auto-stop timer if no STOP command received
         self.move_timeout = 0.5  # seconds
@@ -23,13 +23,18 @@ class MqttMotorBridge(Node):
         self.moving = False
         self.safety_timer = self.create_timer(0.1, self.safety_check)
         
-        # MQTT Client Setup
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Motor_Bridge")
+        # MQTT Client Setup (Supports both paho-mqtt v1.x and v2.x)
+        try:
+            self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Motor_Bridge")
+        except AttributeError:
+            self.mqtt_client = mqtt.Client(client_id="Motor_Bridge")
         self.mqtt_client.on_connect = self.on_mqtt_connect
         self.mqtt_client.on_message = self.on_mqtt_message
         
+        import os
+        broker_ip = os.environ.get('MQTT_BROKER_IP', 'localhost')
         try:
-            self.mqtt_client.connect("localhost", 1883, 60)
+            self.mqtt_client.connect(broker_ip, 1883, 60)
             self.mqtt_client.loop_start()
             self.get_logger().info("MQTT Motor Bridge connected. Listening for web UI commands.")
         except Exception as e:

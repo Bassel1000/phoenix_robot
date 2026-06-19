@@ -26,15 +26,19 @@ class MqttNavClient(Node):
         self.active_goal_y = None
         self.current_goal_handle = None
         
-        # MQTT Setup 
-        # Using Callback API V2 to match the local node scripts
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Nav2_Client")
+        # MQTT Setup (Supports both paho-mqtt v1.x and v2.x)
+        try:
+            self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Nav2_Client")
+        except AttributeError:
+            self.mqtt_client = mqtt.Client(client_id="Nav2_Client")
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         
-        # Connect to Local Broker 
-        # (Replace "localhost" with the Raspberry Pi's IP address if running on a different PC)
-        self.mqtt_client.connect("localhost", 1883, 60)
+        import os
+        broker_ip = os.environ.get('MQTT_BROKER_IP', 'localhost')
+        
+        # Connect to the Broker
+        self.mqtt_client.connect(broker_ip, 1883, 60)
         
         # Start MQTT loop in the background
         self.mqtt_client.loop_start()
@@ -63,9 +67,13 @@ class MqttNavClient(Node):
                     self.pump_trigger.publish(msg_out)
                 return
             
-            # Expecting JSON payload: {"x": 2.5, "y": 1.2}
+            # Expecting JSON payload: {"x": 2.5, "y": 1.2, "yaw": 0.5}
             target_x = float(data.get("x", 0.0))
             target_y = float(data.get("y", 0.0))
+            
+            # Default yaw points from the origin (0,0) to the target if the vision node didn't provide one
+            default_yaw = math.atan2(target_y, target_x)
+            target_yaw = float(data.get("yaw", default_yaw))
             
             # Check if this goal is already being executed
             if self.active_goal_x is not None and self.active_goal_y is not None:
@@ -78,12 +86,12 @@ class MqttNavClient(Node):
                     self.get_logger().info(f"New goal is close to active goal (diff: {distance:.3f}m). Ignoring to prevent preemption.")
                     return
             
-            self.send_nav_goal(target_x, target_y)
+            self.send_nav_goal(target_x, target_y, target_yaw)
         except Exception as e:
             self.get_logger().error(f"Failed to parse MQTT message: {e}")
 
-    def send_nav_goal(self, x, y):
-        self.get_logger().info(f"Sending Nav2 goal: x={x}, y={y}")
+    def send_nav_goal(self, x, y, yaw):
+        self.get_logger().info(f"Sending Nav2 goal: x={x}, y={y}, yaw={yaw}")
         self.nav_client.wait_for_server()
         
         # Track the active target coordinates
@@ -96,7 +104,10 @@ class MqttNavClient(Node):
         goal_msg.pose.header.stamp = Time().to_msg()
         goal_msg.pose.pose.position.x = x
         goal_msg.pose.pose.position.y = y
-        goal_msg.pose.pose.orientation.w = 1.0 # Assuming facing forward is fine
+        
+        # Convert yaw to quaternion so the robot faces the fire
+        goal_msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        goal_msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
         
         self._send_goal_future = self.nav_client.send_goal_async(goal_msg)
         self._send_goal_future.add_done_callback(self.goal_response_callback)
