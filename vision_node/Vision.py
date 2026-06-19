@@ -157,18 +157,8 @@ if __name__ == '__main__':
     print("Loading Pretrained YOLOv8 Fire Detection model...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # === MODEL CONFIGURATION SELECTION ===
-    # Option A: Touati Kamel (YOLOv8-Small - Forest fires only, BAD for candles)
-    # MODEL_REPO = "touati-kamel/yolov8s-forest-fire-detection"
-    # MODEL_FILE = "model.pt"
-
-    # Option B: Rabahdev (YOLOv8-Nano - D-Fire dataset: 21K+ mixed indoor/outdoor images, BEST for small flames)
-    MODEL_REPO = "rabahdev/fire-smoke-yolov8n"
-    MODEL_FILE = "best.pt"
-
-    # Option C: SHOU-ISD (YOLOv8-Nano - Alternate dataset)
-    # MODEL_REPO = "SHOU-ISD/fire-and-smoke"
-    # MODEL_FILE = "best.pt"
+    MODEL_REPO = "pyronear/yolov8s"
+    MODEL_FILE = "yolov8s.pt"
 
     # Securely fetch model from Hugging Face cache using huggingface_hub helper
     from huggingface_hub import hf_hub_download
