@@ -12,9 +12,9 @@ class MotorController(Node):
         # ------- MOTOR HARDWARE CONFIGURATION -------
         # If your robot spins when you tell it to go straight, or goes the wrong way, 
         # change these Booleans to True/False until it drives perfectly.
-        self.swap_left_and_right = False  # Changed to fix inverted steering
-        self.invert_left         = True   # Change from False to True
-        self.invert_right        = False  # Keep this False
+        self.swap_left_and_right = False 
+        self.invert_left         = True   
+        self.invert_right        = False  
         # --------------------------------------------
         
         # Left Motor Driver (BTS7960)
@@ -73,7 +73,7 @@ class MotorController(Node):
         
         # Implement true inverse kinematics from Section 10.2
         B = 0.35   # Track Width
-        V_max = 0.85 # Lowered heavily so that Nav2's 0.8m/s limit actually provides ~95% PWM power to the motors.
+        V_max = 1.0 # Base scaling factor
 
         # Skid-steer robots require huge torque to overcome lateral wheel friction when turning.
         # We amplify the angular command specifically to break static friction.
@@ -82,9 +82,21 @@ class MotorController(Node):
         v_l = self.current_linear - (self.current_angular * B / 2.0 * skid_steer_turn_boost)
         v_r = self.current_linear + (self.current_angular * B / 2.0 * skid_steer_turn_boost)
 
-        # Convert target linear m/s velocities to normalized PWM percentage [-1.0 to 1.0]
+        # Convert target velocities to normalized percentage
         left_speed = v_l / V_max
         right_speed = v_r / V_max
+        
+        # --- DEADBAND COMPENSATOR ---
+        # The heavy robot stalls below ~65% PWM but rockets too fast at 95% PWM.
+        # This maps any requested movement into the "usable" power band (0.65 to 0.95)
+        def apply_deadband(spd, deadband=0.65):
+            if abs(spd) < 0.02: return 0.0
+            sign = 1.0 if spd > 0 else -1.0
+            # Scale the speed into the active range (e.g., 65% to 95%)
+            return sign * (deadband + abs(spd) * (0.95 - deadband))
+            
+        left_speed = apply_deadband(left_speed)
+        right_speed = apply_deadband(right_speed)
         
         # Apply hardware fixes if the physical wiring is swapped/reversed
         if self.swap_left_and_right:

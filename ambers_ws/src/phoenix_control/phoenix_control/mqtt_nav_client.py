@@ -99,8 +99,9 @@ class MqttNavClient(Node):
         self.active_goal_y = y
         
         goal_msg = NavigateToPose.Goal()
-        goal_msg.pose.header.frame_id = 'odom'
-        # Set stamp to 0 to avoid TF extrapolation errors across clock jumps/drift
+        # Set frame_id to base_footprint so coordinates are RELATIVE to the robot's current position!
+        # Example: x=0.3 means "drive 30cm forward from where you are right now"
+        goal_msg.pose.header.frame_id = 'base_footprint'
         goal_msg.pose.header.stamp = Time().to_msg()
         goal_msg.pose.pose.position.x = x
         goal_msg.pose.pose.position.y = y
