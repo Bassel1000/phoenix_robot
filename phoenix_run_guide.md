@@ -10,9 +10,9 @@ Ensure the Okdo (LD06) LiDAR is connected to the Raspberry Pi 4 GPIO pins exactl
 | LiDAR Wire | Description | Connection on Raspberry Pi |
 | :--- | :--- | :--- |
 | **VCC** (Blue) | 5V Power | Physical Pin 4 (5V) |
-| **GND** (Red) | Ground | Physical Pin 34 (GND) |
-| **TX** (Yellow) | Data Output | **Physical Pin 10** (GPIO 15 / RX) |
-| **PWM** (White) | Motor Speed | Physical Pin 8 (GPIO 14 / TX) |
+| **GND** (Red) | Ground | Physical Pin 6 (GND) |
+| **TX** (Yellow) | Data Output | Physical Pin 12 (GPIO 18 / RX) |
+| **PWM** (White) | Motor Speed | Physical Pin 10 (GPIO 15 / TX) |
 
 ---
 
@@ -31,7 +31,7 @@ Ensure the Okdo (LD06) LiDAR is connected to the Raspberry Pi 4 GPIO pins exactl
 ---
 
 ## 🚀 Step-by-Step Run Order (Raspberry Pi)
-Open **9 separate terminal windows** on the Raspberry Pi (via SSH). Run the following commands in order:
+Open **10 separate terminal windows** on the Raspberry Pi (via SSH). Run the following commands in order:
 
 ### Terminal 1: Lidar Publisher (Driver)
 Reads raw data from `/dev/ttyAMA0` and publishes `/scan`.
