@@ -107,6 +107,8 @@ class NozzleController(Node):
             self.pan_servo.value = 0.0
         else:
             self.pan_servo.detach()
+        # Always detach tilt servo when stopped to completely eliminate vibration/jitter
+        self.tilt_servo.detach()
 
     def release_servos(self):
         self.pan_servo.detach()

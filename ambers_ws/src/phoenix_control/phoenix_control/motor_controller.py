@@ -70,7 +70,7 @@ class MotorController(Node):
         
         # Implement true inverse kinematics from Section 10.2
         B = 0.35   # Track Width
-        V_max = 1.5 # Lowered from 2.246 to increase overall PWM power for the heavy robot
+        V_max = 0.85 # Lowered heavily so that Nav2's 0.8m/s limit actually provides ~95% PWM power to the motors.
 
         # Skid-steer robots require huge torque to overcome lateral wheel friction when turning.
         # We amplify the angular command specifically to break static friction.

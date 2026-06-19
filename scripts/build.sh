@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "Building Phoenix Simulation..."
+echo "Building Phoenix..."
 cd ~/ambers_ws
 colcon build
 source install/setup.bash

@@ -70,7 +70,11 @@ class LidarPublisher(Node):
                     distance_mm = int.from_bytes(packet[idx:idx+2], byteorder='little')
                     distance_m = distance_mm / 1000.0
                     
-                    degree_idx = int(round(point_angle)) % 360
+                    # Apply a software rotation to the LiDAR if it's mounted sideways/backward
+                    # 90.0 = Right side is front. 180.0 = Back is front. -90.0 = Left side is front.
+                    angle_offset = 90.0 
+                    shifted_angle = (point_angle + angle_offset) % 360.0
+                    degree_idx = int(round(shifted_angle)) % 360
                     
                     # Filter out the robot's own nozzle and pump at the front (-15 to +15 degrees)
                     if degree_idx <= 15 or degree_idx >= 345:

@@ -70,9 +70,10 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
 
     if ids is not None:
         valid_robot_ids = [0, 1, 2, 3]
+        flat_ids = ids.flatten()
         # Calculate pixel center of the ArUco marker
-        for i in range(len(ids)):
-            if ids[i][0] in valid_robot_ids:
+        for i in range(len(flat_ids)):
+            if flat_ids[i] in valid_robot_ids:
                 marker_center = np.mean(corners[i][0], axis=0)
                 break
 
@@ -85,8 +86,8 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
         ], dtype=np.float32)
 
         # Iterate through detected markers
-        for i in range(len(ids)):
-            if ids[i][0] not in valid_robot_ids:
+        for i in range(len(flat_ids)):
+            if flat_ids[i] not in valid_robot_ids:
                 continue
                 
             # Solve PnP to get the rotation and translation vectors
@@ -567,7 +568,7 @@ if __name__ == '__main__':
                     if d_total > d_safe:
                         x_nav = fire_x_target - (d_safe * dx / d_total)
                         y_nav = fire_y_target - (d_safe * dy / d_total)
-                        yaw_nav = math.atan2(dy, dx)
+                        yaw_nav = math.atan2(dy, dx) + math.pi
                         
                         nav_payload = {
                             "x": round(float(x_nav), 3),

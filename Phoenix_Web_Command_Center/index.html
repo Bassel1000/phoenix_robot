@@ -720,7 +720,7 @@ canvas.chart { width: 100%; height: 64px; }
           <button class="s-btn orange" onclick="sendNavGoal()" style="flex:1;">SEND</button>
         </div>
 
-        <button class="water-btn" id="waterBtn" onmousedown="pumpOn()" onmouseup="pumpOff()" ontouchstart="pumpOn()" ontouchend="pumpOff()">💧 HOLD TO SPRAY</button>
+        <button class="water-btn" id="waterBtn" onclick="togglePump()">💧 TOGGLE SPRAY</button>
 
         <!-- Nozzle Controls -->
         <div class="dpad-lbl" style="margin-top: 1rem;">▸ NOZZLE CONTROL</div>
@@ -1095,10 +1095,25 @@ setInterval(()=>{
 },1000);
 
 // ── COMMANDS ───────────────────────────────────────────────
+let currentMoveDir = 'STOP';
 function sendMove(dir){
+  if (dir !== 'STOP' && currentMoveDir === dir) {
+    // If they click the same direction again, toggle it to STOP
+    dir = 'STOP';
+  }
+  currentMoveDir = dir;
   pub($('tMove').value, dir);
   $('tv-move').textContent = dir;
   addLog(`▶ Move: ${dir}`,'info');
+  
+  // Highlight active button
+  document.querySelectorAll('.dpad-btn').forEach(b => b.style.background = '');
+  if(dir !== 'STOP') {
+    const map = {'FORWARD':0, 'LEFT':1, 'RIGHT':3, 'BACKWARD':4};
+    if(map[dir] !== undefined) {
+      document.querySelectorAll('.manual-ctrls .dpad')[0].children[map[dir]].style.background = 'rgba(0, 229, 160, 0.4)';
+    }
+  }
 }
 
 // Sends JSON {x,y} to ambers/robot/navigation/target (mqtt_nav_client.py)
@@ -1111,18 +1126,21 @@ function sendNavGoal(){
   addLog(`🗺 Nav2 goal sent → x:${x}, y:${y}`,'ok');
 }
 
-// Pump Control (hold to spray)
-function pumpOn(){
-  pub($('tWater').value, 'ON');
-  $('tv-water').textContent = 'ON';
-  $('waterBtn').classList.add('fired');
-  addLog('💧 PUMP ON','fire');
-}
-function pumpOff(){
-  pub($('tWater').value, 'OFF');
-  $('tv-water').textContent = 'OFF';
-  $('waterBtn').classList.remove('fired');
-  addLog('💧 PUMP OFF','fire');
+// Pump Control (Toggle)
+let pumpIsOn = false;
+function togglePump(){
+  pumpIsOn = !pumpIsOn;
+  if(pumpIsOn){
+    pub($('tWater').value, 'ON');
+    $('tv-water').textContent = 'ON';
+    $('waterBtn').classList.add('fired');
+    addLog('💧 PUMP ON','fire');
+  } else {
+    pub($('tWater').value, 'OFF');
+    $('tv-water').textContent = 'OFF';
+    $('waterBtn').classList.remove('fired');
+    addLog('💧 PUMP OFF','fire');
+  }
 }
 
 // Nozzle Controls
@@ -1281,11 +1299,14 @@ document.addEventListener('keydown', e => {
   const map = {i:'FORWARD',j:'LEFT',',':'BACKWARD',l:'RIGHT',k:'STOP',I:'FORWARD',J:'LEFT',L:'RIGHT',K:'STOP',ArrowUp:'FORWARD',ArrowLeft:'LEFT',ArrowDown:'BACKWARD',ArrowRight:'RIGHT'};
   const cmd = map[e.key];
   if(cmd){ e.preventDefault(); sendMove(cmd); }
-  if(e.key==='Enter') pushWater();
+  if(e.key==='Enter') togglePump();
 });
 document.addEventListener('keyup', e => {
   if(!isManual || e.target.tagName==='INPUT') return;
-  if(['i','j',',','l','k','I','J','L','K','ArrowUp','ArrowLeft','ArrowDown','ArrowRight'].includes(e.key)) sendMove('STOP');
+  if(['i','j',',','l','k','I','J','L','K','ArrowUp','ArrowLeft','ArrowDown','ArrowRight'].includes(e.key)) {
+     // Optional: If you want keyboard to stop on keyup, uncomment:
+     // sendMove('STOP');
+  }
 });
 
 addLog('⌨ Keyboard shortcuts active in Manual mode: IJKL,/Arrows=Move, K=Stop, Enter=Water','info');
