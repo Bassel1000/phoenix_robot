@@ -47,7 +47,10 @@ class MotorController(Node):
         return target
 
     def set_motor(self, fwd_pin, rev_pin, speed):
-        speed = max(min(speed, 1.0), -1.0) 
+        # Cap at 95% PWM (0.95) instead of 100% (1.0). 
+        # High-power BTS7960 motor drivers use bootstrap capacitors for their MOSFETs. 
+        # If driven at exactly 100% duty cycle, the capacitor discharges and the motor stalls/whines!
+        speed = max(min(speed, 0.95), -0.95) 
         if speed > 0:
             fwd_pin.value = speed
             rev_pin.value = 0.0

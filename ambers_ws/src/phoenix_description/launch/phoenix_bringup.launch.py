@@ -40,7 +40,8 @@ def generate_launch_description():
             os.path.join(nav2_bringup_dir, 'launch', 'navigation_launch.py')
         ),
         launch_arguments={
-            'use_sim_time': 'False'
+            'use_sim_time': 'False',
+            'params_file': os.path.join(phoenix_desc_dir, 'config', 'nav2_params.yaml')
         }.items()
     )
 

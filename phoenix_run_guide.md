@@ -70,7 +70,7 @@ ros2 launch slam_toolbox online_async_launch.py slam_params_file:=/home/ambers/a
 ```bash
 export ROS_DOMAIN_ID=30
 source ~/ambers_ws/install/setup.bash
-ros2 launch nav2_bringup navigation_launch.py use_sim_time:=False
+ros2 launch nav2_bringup navigation_launch.py use_sim_time:=False params_file:=/home/ambers/ambers_ws/src/phoenix_description/config/nav2_params.yaml
 ```
 
 ### Terminal 5: Motor Controller
