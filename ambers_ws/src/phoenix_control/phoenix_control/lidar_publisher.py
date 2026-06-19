@@ -70,14 +70,16 @@ class LidarPublisher(Node):
                     distance_mm = int.from_bytes(packet[idx:idx+2], byteorder='little')
                     distance_m = distance_mm / 1000.0
                     
-                    # Apply a software rotation to the LiDAR if it's mounted sideways/backward
-                    # 90.0 = Right side is front. 180.0 = Back is front. -90.0 = Left side is front.
-                    angle_offset = 90.0 
-                    shifted_angle = (point_angle + angle_offset) % 360.0
-                    degree_idx = int(round(shifted_angle)) % 360
+                    # 1. RPLiDAR spins clockwise, but ROS expects counter-clockwise. (Mirror)
+                    # 2. The LiDAR's physical right side (90 degrees) is facing the front. (Shift)
+                    # Formula: ros_angle = (450.0 - point_angle) % 360.0
+                    ros_angle = (450.0 - point_angle) % 360.0
+                    degree_idx = int(round(ros_angle)) % 360
                     
-                    # Filter out the robot's own nozzle and pump at the front (-15 to +15 degrees)
-                    if degree_idx <= 15 or degree_idx >= 345:
+                    # Filter out the robot's own body (fire extinguisher, pump, nozzle)
+                    # Any distance less than 25cm (0.25m) is physically inside the robot's footprint.
+                    # We also filter 0.0 which RPLiDAR uses for invalid/missing readings.
+                    if distance_m < 0.25:
                         self.current_ranges[degree_idx] = float('inf') # Mark as clear space
                     else:
                         self.current_ranges[degree_idx] = distance_m

@@ -705,11 +705,11 @@ canvas.chart { width: 100%; height: 64px; }
       <div class="manual-ctrls" id="manualCtrls" style="display:none;">
         <div class="dpad-lbl">▸ DIRECTIONAL CONTROL</div>
         <div class="dpad">
-          <button class="dpad-btn" onclick="sendMove('FORWARD')">▲</button>
-          <button class="dpad-btn" onclick="sendMove('LEFT')">◀</button>
+          <button class="dpad-btn" onmousedown="sendMove('FORWARD')" onmouseup="sendMove('STOP')" ontouchstart="sendMove('FORWARD')" ontouchend="sendMove('STOP')">▲</button>
+          <button class="dpad-btn" onmousedown="sendMove('LEFT')" onmouseup="sendMove('STOP')" ontouchstart="sendMove('LEFT')" ontouchend="sendMove('STOP')">◀</button>
           <button class="dpad-btn stop" onclick="sendMove('STOP')">■</button>
-          <button class="dpad-btn" onclick="sendMove('RIGHT')">▶</button>
-          <button class="dpad-btn" onclick="sendMove('BACKWARD')">▼</button>
+          <button class="dpad-btn" onmousedown="sendMove('RIGHT')" onmouseup="sendMove('STOP')" ontouchstart="sendMove('RIGHT')" ontouchend="sendMove('STOP')">▶</button>
+          <button class="dpad-btn" onmousedown="sendMove('BACKWARD')" onmouseup="sendMove('STOP')" ontouchstart="sendMove('BACKWARD')" ontouchend="sendMove('STOP')">▼</button>
         </div>
 
         <!-- Nav2 target coordinates -->
@@ -1097,17 +1097,15 @@ setInterval(()=>{
 // ── COMMANDS ───────────────────────────────────────────────
 let currentMoveDir = 'STOP';
 function sendMove(dir){
-  if (dir !== 'STOP' && currentMoveDir === dir) {
-    // If they click the same direction again, toggle it to STOP
-    dir = 'STOP';
-  }
+  if(currentMoveDir === dir) return; // Prevent duplicate messages
   currentMoveDir = dir;
+  
   pub($('tMove').value, dir);
   $('tv-move').textContent = dir;
   addLog(`▶ Move: ${dir}`,'info');
   
   // Highlight active button
-  document.querySelectorAll('.dpad-btn').forEach(b => b.style.background = '');
+  document.querySelectorAll('.manual-ctrls .dpad')[0].querySelectorAll('.dpad-btn').forEach(b => b.style.background = '');
   if(dir !== 'STOP') {
     const map = {'FORWARD':0, 'LEFT':1, 'RIGHT':3, 'BACKWARD':4};
     if(map[dir] !== undefined) {
@@ -1296,6 +1294,7 @@ function beep(freq){
 // ── KEYBOARD SHORTCUTS (IJKL / arrows) ────────────────────
 document.addEventListener('keydown', e => {
   if(!isManual || e.target.tagName==='INPUT') return;
+  if(e.repeat) return; // Prevent auto-repeat from stuttering
   const map = {i:'FORWARD',j:'LEFT',',':'BACKWARD',l:'RIGHT',k:'STOP',I:'FORWARD',J:'LEFT',L:'RIGHT',K:'STOP',ArrowUp:'FORWARD',ArrowLeft:'LEFT',ArrowDown:'BACKWARD',ArrowRight:'RIGHT'};
   const cmd = map[e.key];
   if(cmd){ e.preventDefault(); sendMove(cmd); }
@@ -1304,8 +1303,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if(!isManual || e.target.tagName==='INPUT') return;
   if(['i','j',',','l','k','I','J','L','K','ArrowUp','ArrowLeft','ArrowDown','ArrowRight'].includes(e.key)) {
-     // Optional: If you want keyboard to stop on keyup, uncomment:
-     // sendMove('STOP');
+     sendMove('STOP');
   }
 });
 

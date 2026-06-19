@@ -99,7 +99,7 @@ class MqttNavClient(Node):
         self.active_goal_y = y
         
         goal_msg = NavigateToPose.Goal()
-        goal_msg.pose.header.frame_id = 'map'
+        goal_msg.pose.header.frame_id = 'odom'
         # Set stamp to 0 to avoid TF extrapolation errors across clock jumps/drift
         goal_msg.pose.header.stamp = Time().to_msg()
         goal_msg.pose.pose.position.x = x

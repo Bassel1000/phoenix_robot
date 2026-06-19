@@ -74,7 +74,7 @@ class MotorController(Node):
 
         # Skid-steer robots require huge torque to overcome lateral wheel friction when turning.
         # We amplify the angular command specifically to break static friction.
-        skid_steer_turn_boost = 3.0 
+        skid_steer_turn_boost = 5.0 
 
         v_l = self.current_linear - (self.current_angular * B / 2.0 * skid_steer_turn_boost)
         v_r = self.current_linear + (self.current_angular * B / 2.0 * skid_steer_turn_boost)
