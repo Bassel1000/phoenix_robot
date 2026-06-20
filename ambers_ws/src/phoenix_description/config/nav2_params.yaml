@@ -97,25 +97,25 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.30
+      yaw_goal_tolerance: 0.40
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
       time_steps: 15
       model_dt: 0.1
       batch_size: 60
-      ax_max: 4.0        # <--- INCREASED from 3.0 (Forward acceleration)
-      ax_min: -4.0       # <--- DECREASED from -3.0 (Braking)
+      ax_max: 1.0        # Smoother forward acceleration to prevent jerking and LiDAR blur
+      ax_min: -1.0       # Smoother braking
       ay_max: 3.0
       ay_min: -3.0
-      az_max: 3.5
+      az_max: 1.0        # Smoother turning acceleration
       vx_std: 0.1
       vy_std: 0.1
-      wz_std: 0.2
-      vx_max: 0.2        # <--- LOWERED from 0.4 to slow down forward speed
-      vx_min: 0.0        # <--- FORBID REVERSING
+      wz_std: 0.3
+      vx_max: 0.2        # Forward speed
+      vx_min: -0.15      # Reverse speed (slower than forward)
       vy_max: 0.5
-      wz_max: 1.0        # <--- LOWERED from 1.9 to slow down rotation
+      wz_max: 1.0        # Slow down rotation
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 0.5
@@ -321,7 +321,7 @@ behavior_server:
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
-    rotational_acc_lim: 3.2
+    rotational_acc_lim: 1.0
 
 waypoint_follower:
   ros__parameters:

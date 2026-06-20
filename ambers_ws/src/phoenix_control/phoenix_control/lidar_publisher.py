@@ -101,7 +101,7 @@ class LidarPublisher(Node):
         scan_msg.header.stamp = self.get_clock().now().to_msg()
         scan_msg.header.frame_id = 'lidar_link'
         scan_msg.angle_min = 0.0
-        scan_msg.angle_max = 2 * math.pi
+        scan_msg.angle_max = 359.0 * math.pi / 180.0
         scan_msg.angle_increment = math.pi / 180.0 
         scan_msg.range_min = 0.15 
         scan_msg.range_max = 10.0  

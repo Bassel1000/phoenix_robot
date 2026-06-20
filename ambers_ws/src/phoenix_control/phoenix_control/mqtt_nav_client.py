@@ -2,80 +2,53 @@
 import os
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from geometry_msgs.msg import Twist
+from rclpy.action import ActionClient
+from rclpy.time import Time
+from nav2_msgs.action import NavigateToPose
 from std_msgs.msg import Bool
-from sensor_msgs.msg import LaserScan
+from tf2_ros import Buffer, TransformListener
+from tf2_geometry_msgs import do_transform_pose
+from geometry_msgs.msg import PoseStamped
 import paho.mqtt.client as mqtt
 import json
 import math
-import threading
-import time
 
 class MqttNavClient(Node):
     def __init__(self):
         super().__init__('mqtt_nav_client')
-        self.get_logger().info("Initializing MQTT Dead-Reckoning Bridge...")
+        self.get_logger().info("Initializing MQTT to Nav2 Bridge...")
         
-        # Publisher for motor commands
-        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        # ROS 2 Action Client for Nav2
+        self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         
         # Publisher to trigger the pump when goal is reached
         self.pump_trigger = self.create_publisher(Bool, 'target_reached', 10)
         
-        # Subscriber for LiDAR obstacle avoidance
-        self.scan_sub = self.create_subscription(LaserScan, 'scan', self.scan_callback, qos_profile_sensor_data)
-        self.obstacle_detected = False
-        self.safety_distance = 0.45 # meters. Stop if anything is closer than this!
+        # TF Setup for transforming relative goals to global coordinates
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         
-        # --- DEAD RECKONING CALIBRATION ---
-        # Since we are ignoring the LiDAR, we calculate time = distance / speed.
-        # These numbers must match the physical capabilities of your robot. 
-        # If the robot travels too far, increase these numbers (it thinks it's moving slower than it is).
-        # If it doesn't travel far enough, decrease these numbers.
-        self.linear_speed = 0.5   # Virtual m/s
-        self.angular_speed = 0.5  # Virtual rad/s
-        # ----------------------------------
-        
-        self.is_executing = False
+        # Active Goal Tracking to prevent preemption loops
+        self.active_goal_x = None
+        self.active_goal_y = None
+        self.current_goal_handle = None
         
         # MQTT Setup (Supports both paho-mqtt v1.x and v2.x)
         try:
             self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Nav2_Client")
         except AttributeError:
             self.mqtt_client = mqtt.Client(client_id="Nav2_Client")
-            
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         
+        import os
         broker_ip = os.environ.get('MQTT_BROKER_IP', 'localhost')
-        self.mqtt_client.connect(broker_ip, 1883, 60)
-        self.mqtt_client.loop_start()
-
-    def scan_callback(self, msg):
-        # Check the cone directly in front of the robot (approx +/- 20 degrees)
-        # Assuming angle 0 is forward, indices 0-20 and 340-359.
-        front_ranges = []
         
-        # Some lidars have inf or NaN for out of range, we must filter them
-        for i in range(0, 20):
-            if i < len(msg.ranges) and 0.1 < msg.ranges[i] < 10.0:
-                front_ranges.append(msg.ranges[i])
-                
-        for i in range(len(msg.ranges) - 20, len(msg.ranges)):
-            if 0 <= i < len(msg.ranges) and 0.1 < msg.ranges[i] < 10.0:
-                front_ranges.append(msg.ranges[i])
-                
-        if front_ranges:
-            min_dist = min(front_ranges)
-            if min_dist < self.safety_distance:
-                if not self.obstacle_detected:
-                    self.get_logger().warn(f"OBSTACLE AHEAD! Distance: {min_dist:.2f}m")
-                self.obstacle_detected = True
-            else:
-                self.obstacle_detected = False
-        else:
-            self.obstacle_detected = False
+        # Connect to the Broker
+        self.mqtt_client.connect(broker_ip, 1883, 60)
+        
+        # Start MQTT loop in the background
+        self.mqtt_client.loop_start()
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
         self.get_logger().info(f"Connected to Local Broker with result code {rc}")
@@ -91,85 +64,115 @@ class MqttNavClient(Node):
                 trigger = data.get("activate", False)
                 if trigger:
                     self.get_logger().info("Received MQTT Pump trigger. Activating pump...")
-                    self.is_executing = False # cancel any running movements
+                    # Cancel any active goal if we are triggering the pump directly
+                    if self.current_goal_handle is not None:
+                        self.get_logger().info("Canceling active Nav2 goal before starting pump...")
+                        self.current_goal_handle.cancel_goal_async()
+                    
                     msg_out = Bool()
                     msg_out.data = True
                     self.pump_trigger.publish(msg_out)
                 return
             
-            if self.is_executing:
-                self.get_logger().info("Already executing a movement. Ignoring new target.")
-                return
-
             # Expecting JSON payload: {"x": 2.5, "y": 1.2, "yaw": 0.5}
             target_x = float(data.get("x", 0.0))
             target_y = float(data.get("y", 0.0))
             
-            # Default yaw points from the origin (0,0) to the target
-            default_yaw = math.atan2(target_y, target_x)
+            # If moving purely backwards, default yaw to 0.0 to reverse without turning around.
+            # Otherwise, point the yaw towards the destination.
+            if target_x < 0 and target_y == 0:
+                default_yaw = 0.0
+            else:
+                default_yaw = math.atan2(target_y, target_x)
             target_yaw = float(data.get("yaw", default_yaw))
             
-            # Distance to move
-            distance = math.sqrt(target_x**2 + target_y**2)
+            # Check if this goal is already being executed
+            if self.active_goal_x is not None and self.active_goal_y is not None:
+                dx = target_x - self.active_goal_x
+                dy = target_y - self.active_goal_y
+                distance = math.sqrt(dx**2 + dy**2)
+                
+                # If target has not changed significantly, ignore the new MQTT message to prevent preemption
+                if distance < 0.10:
+                    self.get_logger().info(f"New goal is close to active goal (diff: {distance:.3f}m). Ignoring to prevent preemption.")
+                    return
             
-            # Start dead reckoning sequence in a background thread to avoid blocking ROS
-            self.is_executing = True
-            threading.Thread(target=self.execute_dead_reckoning, args=(distance, target_yaw)).start()
-            
+            self.send_nav_goal(target_x, target_y, target_yaw)
         except Exception as e:
             self.get_logger().error(f"Failed to parse MQTT message: {e}")
 
-    def execute_dead_reckoning(self, distance, yaw):
-        self.get_logger().info(f"Starting dead-reckoning: dist={distance:.2f}m, turn={yaw:.2f}rad")
-        twist = Twist()
+    def send_nav_goal(self, x, y, yaw):
+        self.get_logger().info(f"Sending Nav2 goal: x={x}, y={y}, yaw={yaw}")
+        self.nav_client.wait_for_server()
         
-        # 1. Turn to face the target
-        if abs(yaw) > 0.05:
-            turn_time = abs(yaw) / self.angular_speed
-            twist.angular.z = self.angular_speed if yaw > 0 else -self.angular_speed
+        # Track the active target coordinates
+        self.active_goal_x = x
+        self.active_goal_y = y
+        
+        # 1. Create the pose in the base_footprint frame
+        local_pose = PoseStamped()
+        local_pose.header.frame_id = 'base_footprint'
+        local_pose.header.stamp = self.get_clock().now().to_msg()
+        local_pose.pose.position.x = float(x)
+        local_pose.pose.position.y = float(y)
+        local_pose.pose.orientation.z = math.sin(yaw / 2.0)
+        local_pose.pose.orientation.w = math.cos(yaw / 2.0)
+        
+        # 2. Transform the pose to the map frame
+        try:
+            # Look up the transform from map to base_footprint
+            transform = self.tf_buffer.lookup_transform(
+                'map',
+                'base_footprint',
+                rclpy.time.Time(),
+                rclpy.duration.Duration(seconds=1.0)
+            )
+            # Apply the transform
+            global_pose = do_transform_pose(local_pose.pose, transform)
             
-            self.get_logger().info(f"Turning for {turn_time:.2f}s")
+            goal_msg = NavigateToPose.Goal()
+            goal_msg.pose.header.frame_id = 'map'
+            goal_msg.pose.header.stamp = self.get_clock().now().to_msg() # Use current time
+            goal_msg.pose.pose = global_pose
             
-            # Keep publishing to satisfy the new watchdog timer in motor_controller!
-            start_time = time.time()
-            while time.time() - start_time < turn_time and self.is_executing:
-                self.cmd_vel_pub.publish(twist) 
-                time.sleep(0.1)
-                
-            # Stop turning
-            twist.angular.z = 0.0
-            self.cmd_vel_pub.publish(twist)
-            time.sleep(0.5) # brief pause to settle
+            self.get_logger().info(f"Transformed Goal to Global (Map) Frame: x={global_pose.position.x:.2f}, y={global_pose.position.y:.2f}")
             
-        # 2. Drive forward
-        if distance > 0.01 and self.is_executing:
-            drive_time = distance / self.linear_speed
-            twist.linear.x = self.linear_speed
+            self._send_goal_future = self.nav_client.send_goal_async(goal_msg)
+            self._send_goal_future.add_done_callback(self.goal_response_callback)
             
-            self.get_logger().info(f"Driving forward for {drive_time:.2f}s")
-            
-            # Keep publishing to satisfy the new watchdog timer in motor_controller!
-            start_time = time.time()
-            while time.time() - start_time < drive_time and self.is_executing:
-                if self.obstacle_detected:
-                    self.get_logger().error("EMERGENCY STOP: Obstacle Avoidance Triggered!")
-                    self.is_executing = False
-                    break
-                    
-                self.cmd_vel_pub.publish(twist) 
-                time.sleep(0.1)
-                
-            # Stop driving
-            twist.linear.x = 0.0
-            self.cmd_vel_pub.publish(twist)
-            
-        if self.is_executing:
-            self.get_logger().info("Target reached via dead-reckoning! Triggering pump...")
+        except Exception as e:
+            self.get_logger().error(f"Could not transform goal to map frame: {e}")
+            self.active_goal_x = None
+            self.active_goal_y = None
+
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().info('Nav2 Goal rejected.')
+            # Clear active goal tracker
+            self.active_goal_x = None
+            self.active_goal_y = None
+            return
+        self.get_logger().info('Nav2 Goal accepted, navigating...')
+        self.current_goal_handle = goal_handle
+        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future.add_done_callback(self.get_result_callback)
+
+    def get_result_callback(self, future):
+        result = future.result().status
+        
+        # Clear active goal tracking on completion
+        self.active_goal_x = None
+        self.active_goal_y = None
+        self.current_goal_handle = None
+        
+        if result == 4: # 4 corresponds to SUCCEEDED
+            self.get_logger().info('Navigation Succeeded! Triggering Pump...')
             msg = Bool()
             msg.data = True
             self.pump_trigger.publish(msg)
-            
-        self.is_executing = False
+        else:
+            self.get_logger().info(f'Navigation failed with status: {result}')
 
 def main(args=None):
     rclpy.init(args=args)
@@ -179,7 +182,6 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.is_executing = False
         node.mqtt_client.loop_stop()
         node.destroy_node()
         rclpy.shutdown()
