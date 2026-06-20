@@ -35,6 +35,7 @@ class MotorController(Node):
         self.current_linear = 0.0
         self.target_angular = 0.0
         self.current_angular = 0.0
+        self.last_cmd_time = self.get_clock().now()
         
         self.subscription = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
         self.timer = self.create_timer(0.05, self.control_loop) # 20Hz control loop
@@ -65,8 +66,16 @@ class MotorController(Node):
         # Update targets based on joystick/keyboard input
         self.target_linear = msg.linear.x
         self.target_angular = msg.angular.z
+        self.last_cmd_time = self.get_clock().now()
 
     def control_loop(self):
+        # --- SAFETY WATCHDOG ---
+        # If no cmd_vel received in the last 0.5 seconds, auto-stop!
+        # This prevents the robot from crashing if Nav2 loses odometry or connection drops.
+        if (self.get_clock().now() - self.last_cmd_time).nanoseconds > 5e8: # 0.5 seconds in ns
+            self.target_linear = 0.0
+            self.target_angular = 0.0
+
         # Smoothly interpolate current speeds towards target speeds
         self.current_linear = self.approach_target(self.current_linear, self.target_linear, self.linear_step)
         self.current_angular = self.approach_target(self.current_angular, self.target_angular, self.angular_step)
@@ -88,11 +97,12 @@ class MotorController(Node):
         
         # --- DEADBAND COMPENSATOR ---
         # The heavy robot stalls below ~65% PWM but rockets too fast at 95% PWM.
-        # This maps any requested movement into the "usable" power band (0.65 to 0.95)
-        def apply_deadband(spd, deadband=0.50):
-            if abs(spd) < 0.02: return 0.0
+        # This maps any requested movement into the "usable" power band.
+        # We lowered the deadband to 0.35 to allow Nav2 to slow down gracefully near the goal without lurching.
+        def apply_deadband(spd, deadband=0.35):
+            if abs(spd) < 0.05: return 0.0
             sign = 1.0 if spd > 0 else -1.0
-            # Scale the speed into the active range (e.g., 65% to 95%)
+            # Scale the speed into the active range
             return sign * (deadband + abs(spd) * (0.95 - deadband))
             
         left_speed = apply_deadband(left_speed)

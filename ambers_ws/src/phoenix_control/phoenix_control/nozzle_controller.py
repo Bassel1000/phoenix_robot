@@ -42,18 +42,22 @@ class NozzleController(Node):
         self.tilt_servo = Servo(
             13, 
             initial_value=None, 
-            min_pulse_width=1/1000, 
-            max_pulse_width=2/1000, 
+            min_pulse_width=0.0005, 
+            max_pulse_width=0.0025, 
             pin_factory=self.pin_factory
         )
         
         # --- State ---
         self.current_tilt = 0.0
+        self.tilt_direction = 0.0  # -1 for down, 1 for up, 0 for stop
         self.pan_speed = 0.3
-        self.tilt_step = 0.1
+        self.tilt_speed = 0.02     # Smooth interpolation step per tick
 
         # Keep both servos idle until the first command arrives.
         self.release_servos()
+        
+        # 20Hz Control Loop for Smooth Tilting
+        self.timer = self.create_timer(0.05, self.control_loop)
         
         # --- MQTT Client Setup (Supports both paho-mqtt v1.x and v2.x) ---
         try:
@@ -85,21 +89,27 @@ class NozzleController(Node):
         elif command == "RIGHT":
             self.pan_servo.value = self.pan_speed
         elif command == "UP":
-            self.current_tilt = min(1.0, self.current_tilt + self.tilt_step)
-            self.tilt_servo.value = self.current_tilt
+            self.tilt_direction = 1.0
             if self.use_continuous:
                 self.pan_servo.value = 0.0
         elif command == "DOWN":
-            self.current_tilt = max(-1.0, self.current_tilt - self.tilt_step)
-            self.tilt_servo.value = self.current_tilt
+            self.tilt_direction = -1.0
             if self.use_continuous:
                 self.pan_servo.value = 0.0
         elif command == "STOP":
+            self.tilt_direction = 0.0
             self.stop_pan()
         elif command == "CENTER":
+            self.tilt_direction = 0.0
             self.current_tilt = 0.0
             self.tilt_servo.value = 0.0
             self.stop_pan()
+
+    def control_loop(self):
+        if self.tilt_direction != 0.0:
+            self.current_tilt += self.tilt_direction * self.tilt_speed
+            self.current_tilt = max(-1.0, min(1.0, self.current_tilt))
+            self.tilt_servo.value = self.current_tilt
 
     def stop_pan(self):
         # Continuous servo should stop at 0.0. Servo fallback is detached to avoid jitter.
