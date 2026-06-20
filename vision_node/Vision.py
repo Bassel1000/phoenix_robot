@@ -5,6 +5,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dotenv import load_dotenv
+
+# Fix for Keras 3 BatchNormalization deserialization error with older .h5 models
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 import tensorflow as tf
 import threading
 import time
@@ -155,6 +158,84 @@ class CameraStream:
         return self.stream.isOpened()
 
 
+class TCPCameraStream:
+    """
+    Continually grabs raw MJPEG frames from a TCP socket (e.g. from rpicam-vid --listen).
+    OpenCV's VideoCapture often hangs on raw TCP streams without HTTP boundaries.
+    """
+    def __init__(self, src):
+        import urllib.parse
+        import socket
+        parsed = urllib.parse.urlparse(src)
+        self.host = parsed.hostname
+        self.port = parsed.port
+        self.stopped = False
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.settimeout(5.0)
+        self.frame = None
+        self.grabbed = False
+        try:
+            self.sock.connect((self.host, self.port))
+            # Put socket back in blocking mode for the reading loop, or keep timeout
+            self.sock.settimeout(2.0)
+            self._is_opened = True
+        except Exception as e:
+            print(f"TCPCameraStream failed to connect to {src}: {e}")
+            self._is_opened = False
+            self.sock = None
+
+    def start(self):
+        if self._is_opened:
+            self.thread = threading.Thread(target=self.update, args=())
+            self.thread.daemon = True
+            self.thread.start()
+        return self
+
+    def update(self):
+        import numpy as np
+        stream_bytes = b''
+        while not self.stopped and self._is_opened:
+            try:
+                data = self.sock.recv(65536)
+                if not data:
+                    print("TCPCameraStream: Connection closed by server.")
+                    break
+                stream_bytes += data
+                # Look for JPEG Start of Image (FF D8) and End of Image (FF D9)
+                a = stream_bytes.rfind(b'\xff\xd8')
+                b = stream_bytes.rfind(b'\xff\xd9')
+                if a != -1 and b != -1 and b > a:
+                    jpg = stream_bytes[a:b+2]
+                    # Keep only the tail end to avoid memory leaks
+                    stream_bytes = stream_bytes[b+2:]
+                    frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        self.frame = frame
+                        self.grabbed = True
+            except Exception as e:
+                # Timeout is normal if no frames arrive instantly, just keep trying
+                if "timed out" not in str(e).lower():
+                    print(f"TCPCameraStream read error: {e}")
+                    break
+        self._is_opened = False
+        if self.sock:
+            self.sock.close()
+
+    def read(self):
+        return self.grabbed, self.frame
+
+    def stop(self):
+        self.stopped = True
+        if hasattr(self, 'thread'):
+            self.thread.join(timeout=1.0)
+        if self.sock:
+            self.sock.close()
+
+    def isOpened(self):
+        return self._is_opened
+
+
+
 if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -228,7 +309,11 @@ if __name__ == '__main__':
     # Initialize Raspberry Pi Camera Module 3 stream
     pi_camera_url = os.environ.get("PI_CAMERA_URL")
     if pi_camera_url:
-        cap_pi = CameraStream(pi_camera_url).start()
+        if pi_camera_url.startswith("tcp://"):
+            print(f"Using TCPCameraStream for {pi_camera_url}...")
+            cap_pi = TCPCameraStream(pi_camera_url).start()
+        else:
+            cap_pi = CameraStream(pi_camera_url).start()
     else:
         print("PI_CAMERA_URL not set in .env. Falling back to the laptop webcam (0) for testing the Pi models.")
         cap_pi = CameraStream(0).start()
@@ -335,7 +420,8 @@ if __name__ == '__main__':
         
         # Use a moderate confidence threshold — HSV is the primary candle detector,
         # YOLO D-Fire acts as secondary. Higher conf reduces false positives on boxes/objects.
-        results = model(display_frame_tapo, conf=0.35, verbose=False, device=device.type)
+        # Added imgsz=320 to drastically improve FPS
+        results = model(display_frame_tapo, conf=0.35, verbose=False, device=device.type, imgsz=320)
         
         hsv_detected = False
         hsv_x = None
@@ -587,30 +673,35 @@ if __name__ == '__main__':
 
         # 4. Run Raspberry Pi Fall & Human Detection (Keras) on the Pi Camera frame
         display_frame_pi = None
-        if ret_pi and frame_pi is not None and fall_model_pi is not None and human_model_pi is not None:
+        if ret_pi and frame_pi is not None:
             display_frame_pi = frame_pi.copy()
-            img_size = 128
             
-            # Preprocess for Fall model
-            fall_pi_img = cv2.resize(frame_pi, (img_size, img_size))
-            fall_pi_img = cv2.cvtColor(fall_pi_img, cv2.COLOR_BGR2RGB)
-            fall_pi_img = fall_pi_img.astype(np.float32) / 255.0
-            fall_pi_input = np.expand_dims(fall_pi_img, axis=0)
-            
-            fall_pi_pred = fall_model_pi.predict(fall_pi_input, verbose=0)[0][0]
-            
-            # Preprocess for Human model
-            human_pi_img = cv2.resize(frame_pi, (img_size, img_size))
-            human_pi_img = cv2.cvtColor(human_pi_img, cv2.COLOR_BGR2RGB)
-            human_pi_img = human_pi_img.astype(np.float32)
-            human_pi_input = np.expand_dims(human_pi_img, axis=0)
-            
-            human_pi_pred = human_model_pi.predict(human_pi_input, verbose=0)[0][0]
-            
-            # Draw labels for Keras models
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(display_frame_pi, f"Pi Fall: {fall_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fall_pi_pred > 0.5 else (0, 255, 0), 2)
-            cv2.putText(display_frame_pi, f"Pi Human: {human_pi_pred:.2f}", (10, 60), font, 0.8, (255, 0, 0) if human_pi_pred > 0.5 else (0, 255, 0), 2)
+            if fall_model_pi is not None and human_model_pi is not None:
+                fall_img_size = 224
+                human_img_size = 128
+                
+                # Preprocess for Fall model
+                fall_pi_img = cv2.resize(frame_pi, (fall_img_size, fall_img_size))
+                fall_pi_img = cv2.cvtColor(fall_pi_img, cv2.COLOR_BGR2RGB)
+                fall_pi_img = fall_pi_img.astype(np.float32) / 255.0
+                fall_pi_input = np.expand_dims(fall_pi_img, axis=0)
+                
+                # Using model(inputs, training=False) is much faster than model.predict for single frames
+                fall_pi_pred = float(fall_model_pi(fall_pi_input, training=False)[0][0])
+                
+                # Preprocess for Human model
+                human_pi_img = cv2.resize(frame_pi, (human_img_size, human_img_size))
+                human_pi_img = cv2.cvtColor(human_pi_img, cv2.COLOR_BGR2RGB)
+                human_pi_img = human_pi_img.astype(np.float32)
+                human_pi_input = np.expand_dims(human_pi_img, axis=0)
+                
+                # Using model(inputs, training=False) is much faster than model.predict for single frames
+                human_pi_pred = float(human_model_pi(human_pi_input, training=False)[0][0])
+                
+                # Draw labels for Keras models
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                cv2.putText(display_frame_pi, f"Pi Fall: {fall_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fall_pi_pred > 0.5 else (0, 255, 0), 2)
+                cv2.putText(display_frame_pi, f"Pi Human: {human_pi_pred:.2f}", (10, 60), font, 0.8, (255, 0, 0) if human_pi_pred > 0.5 else (0, 255, 0), 2)
 
         # Update global frames for Flask stream
         if display_frame_tapo is not None:
