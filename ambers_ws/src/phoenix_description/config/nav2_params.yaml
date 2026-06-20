@@ -109,13 +109,13 @@ controller_server:
       ay_max: 3.0
       ay_min: -3.0
       az_max: 3.5
-      vx_std: 0.2
-      vy_std: 0.2
-      wz_std: 0.4
-      vx_max: 0.4        # Lowered to ensure LiDAR scan matching doesn't fail
-      vx_min: 0.0        # <--- FORBID REVERSING. Forces the robot to spin and drive forward instead of backing up.
+      vx_std: 0.1
+      vy_std: 0.1
+      wz_std: 0.2
+      vx_max: 0.2        # <--- LOWERED from 0.4 to slow down forward speed
+      vx_min: 0.0        # <--- FORBID REVERSING
       vy_max: 0.5
-      wz_max: 1.9
+      wz_max: 1.0        # <--- LOWERED from 1.9 to slow down rotation
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 0.5
@@ -363,10 +363,10 @@ velocity_smoother:
     stamp_smoothed_velocity_with_smoothing_time: False
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.8, 0.0, 2.0]     # <--- Changed 0.5 to 0.8
-    min_velocity: [-0.5, 0.0, -2.0]   # <--- Changed -0.5 (matches your vx_min)
-    max_accel: [4.0, 0.0, 3.2]        # <--- Changed 2.5 to 4.0
-    max_decel: [-4.0, 0.0, -3.2]      # <--- Changed -2.5 to -4.0
+    max_velocity: [0.3, 0.0, 1.2]     # <--- LOWERED to match new speed limits
+    min_velocity: [-0.3, 0.0, -1.2]   
+    max_accel: [1.5, 0.0, 1.5]        # <--- LOWERED to make acceleration smoother
+    max_decel: [-1.5, 0.0, -1.5]      
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

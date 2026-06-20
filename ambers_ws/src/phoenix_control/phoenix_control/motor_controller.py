@@ -89,7 +89,7 @@ class MotorController(Node):
         # --- DEADBAND COMPENSATOR ---
         # The heavy robot stalls below ~65% PWM but rockets too fast at 95% PWM.
         # This maps any requested movement into the "usable" power band (0.65 to 0.95)
-        def apply_deadband(spd, deadband=0.65):
+        def apply_deadband(spd, deadband=0.50):
             if abs(spd) < 0.02: return 0.0
             sign = 1.0 if spd > 0 else -1.0
             # Scale the speed into the active range (e.g., 65% to 95%)

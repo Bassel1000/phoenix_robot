@@ -76,11 +76,10 @@ class LidarPublisher(Node):
                     ros_angle = (450.0 - point_angle) % 360.0
                     degree_idx = int(round(ros_angle)) % 360
                     
-                    # Filter out the robot's own body (fire extinguisher, pump, nozzle)
-                    # Any distance less than 25cm (0.25m) is physically inside the robot's footprint.
-                    # We also filter 0.0 which RPLiDAR uses for invalid/missing readings.
-                    if distance_m < 0.25:
-                        self.current_ranges[degree_idx] = float('inf') # Mark as clear space
+                    # Filter 0.0 which RPLiDAR uses for invalid/missing readings.
+                    # We also filter anything below 0.15m (the hardware minimum range)
+                    if distance_m == 0.0 or distance_m < 0.15:
+                        self.current_ranges[degree_idx] = float('inf') 
                     else:
                         self.current_ranges[degree_idx] = distance_m
                 
@@ -104,7 +103,7 @@ class LidarPublisher(Node):
         scan_msg.angle_min = 0.0
         scan_msg.angle_max = 2 * math.pi
         scan_msg.angle_increment = math.pi / 180.0 
-        scan_msg.range_min = 0.35 
+        scan_msg.range_min = 0.15 
         scan_msg.range_max = 10.0  
         scan_msg.ranges = list(self.current_ranges) # Make a copy to avoid concurrent writes
         
