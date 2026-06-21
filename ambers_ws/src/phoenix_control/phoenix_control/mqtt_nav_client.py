@@ -120,13 +120,15 @@ class MqttNavClient(Node):
         
         # 2. Transform the pose to the map frame
         try:
-            # Look up the transform from map to base_footprint
-            transform = self.tf_buffer.lookup_transform(
-                'map',
-                'base_footprint',
-                rclpy.time.Time(),
-                rclpy.duration.Duration(seconds=1.0)
-            )
+            # First wait for the transform to become available
+            if self.tf_buffer.can_transform('map', 'base_footprint', rclpy.time.Time(), rclpy.duration.Duration(seconds=1.0)):
+                # Look up the transform from map to base_footprint (Time() gets the latest available)
+                transform = self.tf_buffer.lookup_transform('map', 'base_footprint', rclpy.time.Time())
+            else:
+                self.get_logger().error("Timeout waiting for map -> base_footprint transform")
+                self.active_goal_x = None
+                self.active_goal_y = None
+                return
             # Apply the transform
             global_pose = do_transform_pose(local_pose.pose, transform)
             

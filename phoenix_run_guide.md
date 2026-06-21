@@ -106,7 +106,9 @@ ros2 run phoenix_control nozzle_controller
 cd ~/ambers_ws
 bash ~/ambers_ws/scripts/start_pi_camera_stream.sh
 ```
-
+```bash
+sudo killall -9 rpicam-vid
+```
 ### Terminal 10: MQTT Motor Bridge
 ```bash
 export ROS_DOMAIN_ID=30

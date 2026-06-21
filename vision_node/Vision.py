@@ -72,7 +72,7 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
     marker_center = None
 
     if ids is not None:
-        valid_robot_ids = [0, 1, 2, 3]
+        valid_robot_ids = [1, 2, 3,4]
         flat_ids = ids.flatten()
         # Calculate pixel center of the ArUco marker
         for i in range(len(flat_ids)):

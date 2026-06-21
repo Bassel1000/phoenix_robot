@@ -50,11 +50,14 @@ class NozzleController(Node):
         # --- State ---
         self.current_tilt = 0.0
         self.tilt_direction = 0.0  # -1 for down, 1 for up, 0 for stop
+        self.pan_command = "STOP"  # Store pan command for thread-safety
         self.pan_speed = 0.3
         self.tilt_speed = 0.02     # Smooth interpolation step per tick
 
         # Keep both servos idle until the first command arrives.
         self.release_servos()
+        self.pan_is_detached = True
+        self.tilt_is_detached = True
         
         # 20Hz Control Loop for Smooth Tilting
         self.timer = self.create_timer(0.05, self.control_loop)
@@ -84,41 +87,56 @@ class NozzleController(Node):
         command = msg.payload.decode().strip().upper()
         self.get_logger().info(f"Received nozzle command: {command}")
         
-        if command == "LEFT":
-            self.pan_servo.value = -self.pan_speed
-        elif command == "RIGHT":
-            self.pan_servo.value = self.pan_speed
+        # We only update state variables here to ensure thread-safety.
+        # The actual servo manipulation is done in the control_loop (ROS timer thread).
+        if command == "LEFT" or command == "RIGHT":
+            self.pan_command = command
         elif command == "UP":
             self.tilt_direction = 1.0
-            if self.use_continuous:
-                self.pan_servo.value = 0.0
+            self.pan_command = "STOP"
         elif command == "DOWN":
             self.tilt_direction = -1.0
-            if self.use_continuous:
-                self.pan_servo.value = 0.0
+            self.pan_command = "STOP"
         elif command == "STOP":
             self.tilt_direction = 0.0
-            self.stop_pan()
+            self.pan_command = "STOP"
         elif command == "CENTER":
             self.tilt_direction = 0.0
-            self.current_tilt = 0.0
-            self.tilt_servo.value = 0.0
-            self.stop_pan()
+            self.pan_command = "CENTER"
 
     def control_loop(self):
+        # Handle Tilt
         if self.tilt_direction != 0.0:
-            self.current_tilt += self.tilt_direction * self.tilt_speed
-            self.current_tilt = max(-1.0, min(1.0, self.current_tilt))
-            self.tilt_servo.value = self.current_tilt
-
-    def stop_pan(self):
-        # Continuous servo should stop at 0.0. Servo fallback is detached to avoid jitter.
-        if self.use_continuous:
-            self.pan_servo.value = 0.0
+            new_tilt = self.current_tilt + self.tilt_direction * self.tilt_speed
+            new_tilt = max(-1.0, min(1.0, new_tilt))
+            if new_tilt != self.current_tilt or self.tilt_is_detached:
+                self.current_tilt = new_tilt
+                self.tilt_servo.value = self.current_tilt
+                self.tilt_is_detached = False
         else:
-            self.pan_servo.detach()
-        # Always detach tilt servo when stopped to completely eliminate vibration/jitter
-        self.tilt_servo.detach()
+            if not self.tilt_is_detached:
+                self.tilt_servo.detach()
+                self.tilt_is_detached = True
+
+        # Handle Pan
+        if self.pan_command == "LEFT":
+            self.pan_servo.value = -self.pan_speed
+            self.pan_is_detached = False
+        elif self.pan_command == "RIGHT":
+            self.pan_servo.value = self.pan_speed
+            self.pan_is_detached = False
+        elif self.pan_command == "CENTER":
+            self.current_tilt = 0.0
+            self.tilt_servo.value = 0.0
+            self.tilt_is_detached = False
+            self.pan_command = "STOP" # Center only triggers once
+        elif self.pan_command == "STOP":
+            if not self.pan_is_detached:
+                if self.use_continuous:
+                    self.pan_servo.value = 0.0
+                else:
+                    self.pan_servo.detach()
+                self.pan_is_detached = True
 
     def release_servos(self):
         self.pan_servo.detach()

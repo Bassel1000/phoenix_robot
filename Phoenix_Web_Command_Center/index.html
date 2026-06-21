@@ -725,11 +725,11 @@ canvas.chart { width: 100%; height: 64px; }
         <!-- Nozzle Controls -->
         <div class="dpad-lbl" style="margin-top: 1rem;">▸ NOZZLE CONTROL</div>
         <div class="dpad" style="margin-bottom: .5rem;">
-          <button class="dpad-btn" onmousedown="nozzleUp()" onmouseup="nozzleStop()" ontouchstart="nozzleUp()" ontouchend="nozzleStop()">▲</button>
-          <button class="dpad-btn" onmousedown="nozzleLeft()" onmouseup="nozzleStop()" ontouchstart="nozzleLeft()" ontouchend="nozzleStop()">◀</button>
+          <button class="dpad-btn" onpointerdown="nozzleUp()" onpointerup="nozzleStop()" onpointerleave="nozzleStop()">▲</button>
+          <button class="dpad-btn" onpointerdown="nozzleLeft()" onpointerup="nozzleStop()" onpointerleave="nozzleStop()">◀</button>
           <button class="dpad-btn stop" onclick="nozzleCenter()">⏺</button>
-          <button class="dpad-btn" onmousedown="nozzleRight()" onmouseup="nozzleStop()" ontouchstart="nozzleRight()" ontouchend="nozzleStop()">▶</button>
-          <button class="dpad-btn" onmousedown="nozzleDown()" onmouseup="nozzleStop()" ontouchstart="nozzleDown()" ontouchend="nozzleStop()">▼</button>
+          <button class="dpad-btn" onpointerdown="nozzleRight()" onpointerup="nozzleStop()" onpointerleave="nozzleStop()">▶</button>
+          <button class="dpad-btn" onpointerdown="nozzleDown()" onpointerup="nozzleStop()" onpointerleave="nozzleStop()">▼</button>
         </div>
       </div>
     </div>
