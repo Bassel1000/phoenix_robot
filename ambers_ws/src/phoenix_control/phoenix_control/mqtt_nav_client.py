@@ -6,12 +6,12 @@ from rclpy.action import ActionClient
 from rclpy.time import Time
 from nav2_msgs.action import NavigateToPose
 from std_msgs.msg import Bool
-from tf2_ros import Buffer, TransformListener
-from tf2_geometry_msgs import do_transform_pose
 from geometry_msgs.msg import PoseStamped
 import paho.mqtt.client as mqtt
 import json
 import math
+import random
+import string
 
 class MqttNavClient(Node):
     def __init__(self):
@@ -24,9 +24,9 @@ class MqttNavClient(Node):
         # Publisher to trigger the pump when goal is reached
         self.pump_trigger = self.create_publisher(Bool, 'target_reached', 10)
         
-        # TF Setup for transforming relative goals to global coordinates
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        # Generate a random suffix for the MQTT Client ID to avoid conflicts if multiple instances run
+        client_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=4))
+        self.mqtt_client_id = f"Nav2_Client_{client_suffix}"
         
         # Active Goal Tracking to prevent preemption loops
         self.active_goal_x = None
@@ -35,9 +35,9 @@ class MqttNavClient(Node):
         
         # MQTT Setup (Supports both paho-mqtt v1.x and v2.x)
         try:
-            self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Nav2_Client")
+            self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=self.mqtt_client_id)
         except AttributeError:
-            self.mqtt_client = mqtt.Client(client_id="Nav2_Client")
+            self.mqtt_client = mqtt.Client(client_id=self.mqtt_client_id)
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         
@@ -109,43 +109,18 @@ class MqttNavClient(Node):
         self.active_goal_x = x
         self.active_goal_y = y
         
-        # 1. Create the pose in the base_footprint frame
-        local_pose = PoseStamped()
-        local_pose.header.frame_id = 'base_footprint'
-        local_pose.header.stamp = self.get_clock().now().to_msg()
-        local_pose.pose.position.x = float(x)
-        local_pose.pose.position.y = float(y)
-        local_pose.pose.orientation.z = math.sin(yaw / 2.0)
-        local_pose.pose.orientation.w = math.cos(yaw / 2.0)
+        # Create the pose directly in the base_footprint frame. 
+        # Nav2's action server will automatically handle the TF transform to the global map frame.
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose.header.frame_id = 'base_footprint'
+        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.pose.pose.position.x = float(x)
+        goal_msg.pose.pose.position.y = float(y)
+        goal_msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        goal_msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
         
-        # 2. Transform the pose to the map frame
-        try:
-            # First wait for the transform to become available
-            if self.tf_buffer.can_transform('map', 'base_footprint', rclpy.time.Time(), rclpy.duration.Duration(seconds=1.0)):
-                # Look up the transform from map to base_footprint (Time() gets the latest available)
-                transform = self.tf_buffer.lookup_transform('map', 'base_footprint', rclpy.time.Time())
-            else:
-                self.get_logger().error("Timeout waiting for map -> base_footprint transform")
-                self.active_goal_x = None
-                self.active_goal_y = None
-                return
-            # Apply the transform
-            global_pose = do_transform_pose(local_pose.pose, transform)
-            
-            goal_msg = NavigateToPose.Goal()
-            goal_msg.pose.header.frame_id = 'map'
-            goal_msg.pose.header.stamp = self.get_clock().now().to_msg() # Use current time
-            goal_msg.pose.pose = global_pose
-            
-            self.get_logger().info(f"Transformed Goal to Global (Map) Frame: x={global_pose.position.x:.2f}, y={global_pose.position.y:.2f}")
-            
-            self._send_goal_future = self.nav_client.send_goal_async(goal_msg)
-            self._send_goal_future.add_done_callback(self.goal_response_callback)
-            
-        except Exception as e:
-            self.get_logger().error(f"Could not transform goal to map frame: {e}")
-            self.active_goal_x = None
-            self.active_goal_y = None
+        self._send_goal_future = self.nav_client.send_goal_async(goal_msg)
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
 
     def goal_response_callback(self, future):
         goal_handle = future.result()
@@ -169,10 +144,10 @@ class MqttNavClient(Node):
         self.current_goal_handle = None
         
         if result == 4: # 4 corresponds to SUCCEEDED
-            self.get_logger().info('Navigation Succeeded! Triggering Pump...')
-            msg = Bool()
-            msg.data = True
-            self.pump_trigger.publish(msg)
+            self.get_logger().info('Navigation Succeeded! (Automatic pump trigger is now disabled for safety)')
+            # msg = Bool()
+            # msg.data = True
+            # self.pump_trigger.publish(msg)
         else:
             self.get_logger().info(f'Navigation failed with status: {result}')
 

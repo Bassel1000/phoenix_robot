@@ -11,12 +11,12 @@ slam_toolbox:
     base_frame: base_footprint
     scan_topic: /scan
     mode: mapping # Dynamic mapping
-    message_queue_size: 20
+    message_queue_size: 50
 
     # Performance optimizations for Raspberry Pi 4
     map_update_interval: 5.0  # Slow down map updates slightly to save CPU
     resolution: 0.05
     max_laser_range: 10.0
     minimum_time_interval: 0.1
-    transform_timeout: 0.5
+    transform_timeout: 2.0
     tf_buffer_duration: 30.0

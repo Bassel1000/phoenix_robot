@@ -1,8 +1,11 @@
 # Contributor: Bassel Elbahnasy
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TransformStamped
+from nav_msgs.msg import Odometry
+from tf2_ros import TransformBroadcaster
 from gpiozero import PWMOutputDevice
+import math
 
 class MotorController(Node):
     def __init__(self):
@@ -27,15 +30,22 @@ class MotorController(Node):
         
         # Acceleration / Smoothing Configuration
         # 'step' is how much the speed can change every 0.05 seconds (the timer rate).
-        # A step of 0.05 means it takes 1.0 second to reach full speed from 0 to 1.0
-        self.linear_step = 0.05 
-        self.angular_step = 0.05
+        # We increase this to prevent double-smoothing (since Nav2 already smooths velocity).
+        self.linear_step = 0.2 
+        self.angular_step = 0.5
         
         self.target_linear = 0.0
         self.current_linear = 0.0
         self.target_angular = 0.0
         self.current_angular = 0.0
         self.last_cmd_time = self.get_clock().now()
+        
+        # Open-loop Odometry setup
+        self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
+        self.tf_broadcaster = TransformBroadcaster(self)
+        self.odom_x = 0.0
+        self.odom_y = 0.0
+        self.odom_yaw = 0.0
         
         self.subscription = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
         self.timer = self.create_timer(0.05, self.control_loop) # 20Hz control loop
@@ -80,6 +90,36 @@ class MotorController(Node):
         self.current_linear = self.approach_target(self.current_linear, self.target_linear, self.linear_step)
         self.current_angular = self.approach_target(self.current_angular, self.target_angular, self.angular_step)
         
+        # Integrate Odometry
+        dt = 0.05
+        self.odom_yaw += self.current_angular * dt
+        self.odom_x += self.current_linear * math.cos(self.odom_yaw) * dt
+        self.odom_y += self.current_linear * math.sin(self.odom_yaw) * dt
+        
+        # Publish TF
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'odom'
+        t.child_frame_id = 'base_footprint'
+        t.transform.translation.x = self.odom_x
+        t.transform.translation.y = self.odom_y
+        t.transform.translation.z = 0.0
+        t.transform.rotation.z = math.sin(self.odom_yaw / 2.0)
+        t.transform.rotation.w = math.cos(self.odom_yaw / 2.0)
+        self.tf_broadcaster.sendTransform(t)
+        
+        # Publish Odometry Topic for Nav2 Velocity Feedback
+        odom = Odometry()
+        odom.header.stamp = t.header.stamp
+        odom.header.frame_id = 'odom'
+        odom.child_frame_id = 'base_footprint'
+        odom.pose.pose.position.x = self.odom_x
+        odom.pose.pose.position.y = self.odom_y
+        odom.pose.pose.orientation = t.transform.rotation
+        odom.twist.twist.linear.x = self.current_linear
+        odom.twist.twist.angular.z = self.current_angular
+        self.odom_pub.publish(odom)
+        
         # Implement true inverse kinematics from Section 10.2
         B = 0.35   # Track Width
         V_max = 1.0 # Base scaling factor
@@ -98,8 +138,7 @@ class MotorController(Node):
         # --- DEADBAND COMPENSATOR ---
         # The heavy robot stalls below ~65% PWM but rockets too fast at 95% PWM.
         # This maps any requested movement into the "usable" power band.
-        # We lowered the deadband to 0.35 to allow Nav2 to slow down gracefully near the goal without lurching.
-        def apply_deadband(spd, deadband=0.35):
+        def apply_deadband(spd, deadband=0.65):
             if abs(spd) < 0.05: return 0.0
             sign = 1.0 if spd > 0 else -1.0
             # Scale the speed into the active range

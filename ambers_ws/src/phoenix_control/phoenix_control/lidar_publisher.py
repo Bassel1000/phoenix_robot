@@ -79,7 +79,7 @@ class LidarPublisher(Node):
                     # Filter 0.0 which RPLiDAR uses for invalid/missing readings.
                     # We also filter anything below 0.15m (the hardware minimum range)
                     if distance_m == 0.0 or distance_m < 0.15:
-                        self.current_ranges[degree_idx] = float('inf') 
+                        self.current_ranges[degree_idx] = 0.0 
                     else:
                         self.current_ranges[degree_idx] = distance_m
                 

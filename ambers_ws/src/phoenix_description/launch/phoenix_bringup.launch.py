@@ -73,12 +73,6 @@ def generate_launch_description():
         name='nozzle_controller'
     )
 
-    # 9. Pi Camera Stream
-    # Execute the bash script directly
-    camera_stream = ExecuteProcess(
-        cmd=['bash', os.path.expanduser('~/ambers_ws/scripts/start_pi_camera_stream.sh')],
-        output='screen'
-    )
 
     # 10. MQTT Motor Bridge
     mqtt_bridge_node = Node(
@@ -96,6 +90,5 @@ def generate_launch_description():
         mqtt_nav_node,
         pump_node,
         nozzle_node,
-        mqtt_bridge_node,
-        camera_stream
+        mqtt_bridge_node
     ])

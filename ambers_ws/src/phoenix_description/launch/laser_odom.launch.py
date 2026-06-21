@@ -31,27 +31,14 @@ def generate_launch_description():
             'use_sim_time': False
         }]
     )
-
-    # 3. Publish Laser Odometry (odom -> base_link) using LiDAR scans
-    rf2o_laser_odometry_node = Node(
-        package='rf2o_laser_odometry',
-        executable='rf2o_laser_odometry_node',
-        name='rf2o_laser_odometry',
-        output='screen',
-        parameters=[{
-            'laser_scan_topic': '/scan',
-            'odom_topic': '/odom',
-            'publish_tf': True,
-            'base_frame_id': 'base_footprint',
-            'odom_frame_id': 'odom',
-            'laser_frame_id': 'lidar_link', # Must match the frame name in your URDF/LiDAR driver
-            'init_pose_from_topic': '',      # Crucial: Disable waiting for ground truth pose
-            'freq': 10.0 # Frequency of odometry computation (Hz)
-        }]
+    static_odom_node = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='static_odom_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_footprint']
     )
 
     return LaunchDescription([
         robot_state_publisher_node,
-        joint_state_publisher_node,
-        rf2o_laser_odometry_node
+        joint_state_publisher_node
     ])
