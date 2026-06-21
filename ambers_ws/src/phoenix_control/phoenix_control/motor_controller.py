@@ -79,46 +79,51 @@ class MotorController(Node):
         self.last_cmd_time = self.get_clock().now()
 
     def control_loop(self):
-        # --- SAFETY WATCHDOG ---
-        # If no cmd_vel received in the last 0.5 seconds, auto-stop!
-        # This prevents the robot from crashing if Nav2 loses odometry or connection drops.
-        if (self.get_clock().now() - self.last_cmd_time).nanoseconds > 5e8: # 0.5 seconds in ns
-            self.target_linear = 0.0
-            self.target_angular = 0.0
+        try:
+            # --- SAFETY WATCHDOG ---
+            # If no cmd_vel received in the last 0.5 seconds, auto-stop!
+            # This prevents the robot from crashing if Nav2 loses odometry or connection drops.
+            if (self.get_clock().now() - self.last_cmd_time).nanoseconds > 5e8: # 0.5 seconds in ns
+                self.target_linear = 0.0
+                self.target_angular = 0.0
 
-        # Smoothly interpolate current speeds towards target speeds
-        self.current_linear = self.approach_target(self.current_linear, self.target_linear, self.linear_step)
-        self.current_angular = self.approach_target(self.current_angular, self.target_angular, self.angular_step)
-        
-        # Integrate Odometry
-        dt = 0.05
-        self.odom_yaw += self.current_angular * dt
-        self.odom_x += self.current_linear * math.cos(self.odom_yaw) * dt
-        self.odom_y += self.current_linear * math.sin(self.odom_yaw) * dt
-        
-        # Publish TF
-        t = TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'odom'
-        t.child_frame_id = 'base_footprint'
-        t.transform.translation.x = self.odom_x
-        t.transform.translation.y = self.odom_y
-        t.transform.translation.z = 0.0
-        t.transform.rotation.z = math.sin(self.odom_yaw / 2.0)
-        t.transform.rotation.w = math.cos(self.odom_yaw / 2.0)
-        self.tf_broadcaster.sendTransform(t)
-        
-        # Publish Odometry Topic for Nav2 Velocity Feedback
-        odom = Odometry()
-        odom.header.stamp = t.header.stamp
-        odom.header.frame_id = 'odom'
-        odom.child_frame_id = 'base_footprint'
-        odom.pose.pose.position.x = self.odom_x
-        odom.pose.pose.position.y = self.odom_y
-        odom.pose.pose.orientation = t.transform.rotation
-        odom.twist.twist.linear.x = self.current_linear
-        odom.twist.twist.angular.z = self.current_angular
-        self.odom_pub.publish(odom)
+            # Smoothly interpolate current speeds towards target speeds
+            self.current_linear = self.approach_target(self.current_linear, self.target_linear, self.linear_step)
+            self.current_angular = self.approach_target(self.current_angular, self.target_angular, self.angular_step)
+            
+            # Integrate Odometry
+            dt = 0.05
+            self.odom_yaw += self.current_angular * dt
+            self.odom_x += self.current_linear * math.cos(self.odom_yaw) * dt
+            self.odom_y += self.current_linear * math.sin(self.odom_yaw) * dt
+            
+            # Publish TF
+            t = TransformStamped()
+            t.header.stamp = self.get_clock().now().to_msg()
+            t.header.frame_id = 'odom'
+            t.child_frame_id = 'base_footprint'
+            t.transform.translation.x = float(self.odom_x)
+            t.transform.translation.y = float(self.odom_y)
+            t.transform.translation.z = 0.0
+            t.transform.rotation.z = float(math.sin(self.odom_yaw / 2.0))
+            t.transform.rotation.w = float(math.cos(self.odom_yaw / 2.0))
+            self.tf_broadcaster.sendTransform(t)
+            
+            # Publish Odometry Topic for Nav2 Velocity Feedback
+            odom = Odometry()
+            odom.header.stamp = t.header.stamp
+            odom.header.frame_id = 'odom'
+            odom.child_frame_id = 'base_footprint'
+            odom.pose.pose.position.x = float(self.odom_x)
+            odom.pose.pose.position.y = float(self.odom_y)
+            # Copy rotation fields manually to ensure strict type matching
+            odom.pose.pose.orientation.z = t.transform.rotation.z
+            odom.pose.pose.orientation.w = t.transform.rotation.w
+            odom.twist.twist.linear.x = float(self.current_linear)
+            odom.twist.twist.angular.z = float(self.current_angular)
+            self.odom_pub.publish(odom)
+        except Exception as e:
+            self.get_logger().error(f"Error in motor control loop: {e}")
         
         # Implement true inverse kinematics from Section 10.2
         B = 0.35   # Track Width
