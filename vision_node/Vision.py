@@ -235,27 +235,45 @@ class TCPCameraStream:
         return self._is_opened
 
 
+class FireDetectionModel(nn.Module):
+    def __init__(self, S=7, C=2):
+        super().__init__()
+        self.S = S
+        self.C = C
+
+        self.backbone = nn.Sequential(
+            nn.Conv2d(3, 16, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(),
+            nn.AdaptiveAvgPool2d((7, 7))
+        )
+
+        self.head = nn.Conv2d(128, 5 + C, kernel_size=1)
+
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.head(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
 
 if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # 1. Load the Pre-trained YOLOv8 Fire Detection Model
-    print("Loading Pretrained YOLOv8 Fire Detection model...")
+    # 1. Load the Custom PyTorch Fire Detection Model
+    print("Loading Custom PyTorch Fire Detection model...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    MODEL_REPO = "pyronear/yolov8s"
-    MODEL_FILE = "yolov8s.pt"
-
-    # Securely fetch model from Hugging Face cache using huggingface_hub helper
-    from huggingface_hub import hf_hub_download
+    model_path = os.path.join(current_dir, "Fire_Detection", "fire_detection_model.pt")
+    
     try:
-        print(f"Downloading custom weights from Hugging Face Hub: {MODEL_REPO}/{MODEL_FILE}...")
-        model_path = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
-        model = YOLO(model_path)
-        print(f"Model {MODEL_REPO} initialized successfully.")
+        model = FireDetectionModel(S=7, C=2).to(device)
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()
+        print("Custom Fire Detection model loaded successfully.")
     except Exception as e:
-        print(f"Hugging Face fetch failed: {e}. Falling back to default baseline model...")
-        model = YOLO("yolov8n.pt") 
+        print(f"Error loading custom fire model: {e}")
+        model = None
 
     # Start Flask video streaming server in a background thread
     print("Starting Flask streaming server on port 5000...")
@@ -418,10 +436,43 @@ if __name__ == '__main__':
         max_box_height_ratio = 0.45
         use_hsv_fire_fallback = True  # Re-enabled for testing with mobile screens
         
-        # Use a moderate confidence threshold — HSV is the primary candle detector,
-        # YOLO D-Fire acts as secondary. Higher conf reduces false positives on boxes/objects.
-        # Added imgsz=320 to drastically improve FPS
-        results = model(display_frame_tapo, conf=0.35, verbose=False, device=device.type, imgsz=320)
+        # Custom PyTorch Model Inference
+        custom_detections = []
+        if model is not None:
+            model.eval()
+            img_rgb = cv2.cvtColor(display_frame_tapo, cv2.COLOR_BGR2RGB)
+            img_input = cv2.resize(img_rgb, (416, 416)).transpose(2,0,1) / 255.0
+            tensor = torch.tensor(img_input, dtype=torch.float32).unsqueeze(0).to(device)
+            
+            with torch.no_grad():
+                out = model(tensor) # Shape: (1, 7, 7, 7)
+                
+            S = 7
+            conf_map = torch.sigmoid(out[0, ..., 4])
+            flat_idx = torch.argmax(conf_map)
+            conf_val = conf_map.flatten()[flat_idx].item()
+            
+            if conf_val > 0.35:
+                j = (flat_idx // S).item()
+                i = (flat_idx % S).item()
+                
+                box = out[0, j, i, 0:4] # x_cell, y_cell, w, h
+                
+                # Convert to pixel coordinates
+                x_abs = (box[0].item() + i) / S * frame_w
+                y_abs = (box[1].item() + j) / S * frame_h
+                w_abs = box[2].item() * frame_w
+                h_abs = box[3].item() * frame_h
+                
+                x1 = int(x_abs - w_abs/2)
+                y1 = int(y_abs - h_abs/2)
+                x2 = int(x_abs + w_abs/2)
+                y2 = int(y_abs + h_abs/2)
+                
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(frame_w, x2), min(frame_h, y2)
+                
+                custom_detections.append({'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'conf': conf_val})
         
         hsv_detected = False
         hsv_x = None
@@ -497,18 +548,11 @@ if __name__ == '__main__':
                 hsv_y = hsv_center_y
                 break
         
-        for r in results:
-            boxes = r.boxes
-            for box in boxes:
-                conf = float(box.conf[0])
-                cls = int(box.cls[0])
-
-                # D-Fire model classes: 0=smoke, 1=fire. Only process fire detections.
-                if cls != 1:
-                    continue
-
-                # Extract bounding box pixel coordinates
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
+        for det in custom_detections:
+            conf = det['conf']
+            
+            # Extract bounding box pixel coordinates
+            x1, y1, x2, y2 = det['x1'], det['y1'], det['x2'], det['y2']
                 box_w = x2 - x1
                 box_h = y2 - y1
                 box_area_ratio = (box_w * box_h) / frame_area
