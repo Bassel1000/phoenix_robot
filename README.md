@@ -79,11 +79,14 @@ phoenix_robot/
 │   └── src/
 │       ├── phoenix_control/    # Hardware and MQTT bridge nodes
 │       └── phoenix_description/# URDF, transforms, and navigation configs
-├── vision_node/                # Laptop Vision Stack (YOLOv8 + HSV fallback + ArUco)
+├── vision_node/                # Laptop Vision Stack (Custom PyTorch Flame Model + Fall/Human Keras Models + ArUco)
 ├── Phoenix_Web_Command_Center/ # Operator Control Dashboard (HTML5 / Vanilla CSS / JS)
+├── Local_MQTT/                 # Local Mosquitto MQTT broker configuration
 ├── scripts/                    # Automation and utility scripts
+├── runs/                       # Output logs and system run records
 ├── docs/                       # Research documents & project reports
 ├── phoenix_run_guide.md        # Comprehensive execution and setup guide
+├── speed_calculations.md       # Math and theory behind robot speed and gear ratio
 └── README.md                   # Main documentation (this file)
 ```
 
@@ -132,7 +135,7 @@ Open individual SSH terminal windows on the Raspberry Pi and execute the followi
 ---
 
 ## 🚒 How the Mission Works
-1. **Flame Detection:** The stationary `Vision.py` uses YOLOv8 (and HSV fallback for smaller candle flames) to recognize fire. It projects pixel coordinates to 3D navigation targets using ArUco marker references.
+1. **Flame Detection:** The stationary `Vision.py` uses a custom-trained PyTorch model (and HSV fallback for smaller candle flames) to recognize fire, alongside Keras models for Human and Fall detection. It projects pixel coordinates to 3D navigation targets using ArUco marker references.
 2. **Autonomous Travel:** Targets are dispatched to `mqtt_nav_client`, sending a Goal Pose to Nav2. The robot navigates autonomously using real-time Laser Odometry and the SLAM-built costmap.
 3. **Safe Distance Arrival:** Once within `0.3m` (30cm) of the candle, navigation halts and locks.
 4. **Manual Suppression:** The operator uses the **Web Command Center** to command the continuous panning/tilting nozzle servos and activate the 24V water pump relay using the hold-to-spray interface to extinguish the flame.
