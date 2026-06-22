@@ -92,10 +92,6 @@ phoenix_robot/
 
 ---
 
-## 🚀 Quick Start (Operation Summary)
-
-For a complete step-by-step setup walkthrough including MQTT configs and wiring, see the detailed **[Phoenix Execution & Mission Guide](file:///c:/Users/basse/OneDrive - King Salman International University/Graduation Project/phoenix_robot/phoenix_run_guide.md)**.
-
 ### 1. Build and Prepare (Raspberry Pi)
 Verify that helper scripts are executable:
 ```bash
