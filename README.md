@@ -26,7 +26,7 @@
 Combining an off-board **AI Perception Engine**, an on-board **ROS 2 Navigation & SLAM Edge Computer**, and a browser-based **Cybernetic Operator Command Center**, Phoenix bridges the gap between fully autonomous hazard seeking and fail-safe human-in-the-loop tactical intervention.
 
 <p align="center">
-  <img src="Phoenix_Web_Command_Center/images/logo.png" width="120" alt="Phoenix Emblem" />
+  <img src="assets/Phoenix_Overview.png" width="600" alt="Phoenix Robot Physical System Overview" />
 </p>
 
 ---
