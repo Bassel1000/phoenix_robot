@@ -1,137 +1,193 @@
-# Phoenix Robot
+<p align="center">
+  <img src="assets/logo.png" alt="Phoenix Robot Logo" width="220" />
+</p>
 
-Intelligent Mobile Robot for autonomous flame detection and manual fire suppression. This repository utilizes a split-node architecture, distributing tasks across a stationary **Vision Node** (Laptop), a **Web Command Center** (Operator Console), and the physical **Mobile Edge Node** (Raspberry Pi 4).
+<h1 align="center">PHOENIX ROBOT</h1>
 
-The system has transitioned from simulation to physical edge deployment. All simulation world and display launch files have been removed, configuring the workspace exclusively for real-world operations with laser-scan-based odometry (`rf2o_laser_odometry`), dynamic SLAM, Nav2, and web-based manual override controls.
+<p align="center">
+  <strong>Autonomous AI Fire-Seeking, Hazard Assessment & Precision Suppression Mobile Robot</strong>
+</p>
+
+<p align="center">
+  <a href="https://docs.ros.org/en/humble/"><img src="https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy-22314E.svg?logo=ros&logoColor=white" alt="ROS 2"></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-Flame%20CNN-EE4C2C.svg?logo=pytorch&logoColor=white" alt="PyTorch"></a>
+  <a href="https://www.tensorflow.org/"><img src="https://img.shields.io/badge/TensorFlow-Life%20Detection-FF6F00.svg?logo=tensorflow&logoColor=white" alt="TensorFlow"></a>
+  <a href="https://navigation.ros.org/"><img src="https://img.shields.io/badge/Nav2-Autonomous%20Navigation-326CE5.svg" alt="Nav2"></a>
+  <a href="https://mosquitto.org/"><img src="https://img.shields.io/badge/MQTT-WebSockets%20HUD-3C5280.svg?logo=eclipse-mosquitto&logoColor=white" alt="MQTT"></a>
+  <a href="https://www.ksiu.edu.eg/"><img src="https://img.shields.io/badge/KSIU-Graduation%20Project-008080.svg" alt="KSIU"></a>
+</p>
 
 ---
 
-## 🏗️ System Architecture
+## 🌟 Product Overview
+
+**Phoenix** is an enterprise-grade autonomous emergency response robot engineered to detect, locate, and suppress indoor fire hazards while conducting real-time search-and-rescue casualty assessment. 
+
+Combining an off-board **AI Perception Engine**, an on-board **ROS 2 Navigation & SLAM Edge Computer**, and a browser-based **Cybernetic Operator Command Center**, Phoenix bridges the gap between fully autonomous hazard seeking and fail-safe human-in-the-loop tactical intervention.
+
+<p align="center">
+  <img src="Phoenix_Web_Command_Center/images/logo.png" width="120" alt="Phoenix Emblem" />
+</p>
+
+---
+
+## 🚀 Key Capabilities
+
+### 🔥 AI Fire & Flame Seeking
+* **Custom PyTorch Deep Learning Classifier:** Real-time flame recognition resistant to smoke and environmental light shifts.
+* **Micro-Flame Chromatic Verification:** High-precision HSV color segmentation and morphological aspect ratio filtering designed to isolate small flame sources (such as candles).
+* **ArUco Spatial Projection:** Solves the Perspective-n-Point (PnP) geometry to translate camera pixel centroids into millimeter-accurate metric navigation coordinates in the arena ground plane.
+
+### 👤 Search & Rescue Life Detection
+* **Human Presence Recognition:** Keras deep learning model continuously surveying the arena for personnel.
+* **Fall & Casualty Identification:** Dedicated neural classifier detecting non-upright or incapacitated individuals, raising immediate emergency priority status on the operator HUD.
+
+### 🧭 Slip-Resistant Autonomous Navigation
+* **`rf2o_laser_odometry`:** Continuous planar laser scan odometry that overcomes the severe wheel slip typical of 4-wheel skid-steer chassis.
+* **Dynamic SLAM & Costmaps:** SLAM Toolbox asynchronous mapping paired with Nav2 global and local costmaps for obstacle avoidance.
+* **Safe Standoff Distance:** Enforces an automatic $0.30\text{ m}$ ($30\text{ cm}$) standoff lock, shielding robot hardware from flame contact.
+
+### 💦 2-DOF Pan-Tilt Suppression Turret
+* **Precision Aiming Gimbal:** 360° continuous horizontal panning (GPIO 19) and 180° vertical tilt trimming (GPIO 13) with automatic idle detachment to eliminate jitter and save power.
+* **24V High-Pressure Water Cannon:** Optically isolated relay driving a self-priming diaphragm pump delivering targeted water suppression.
+* **Hold-to-Spray Interlock:** Fail-safe tactile trigger preventing accidental water discharge or tank depletion.
+
+### 🎮 Zero-Latency Web Command Center
+* **Dual-Stream Tactical HUD:** Real-time side-by-side surveillance view (with neural bounding boxes and tracking vectors) and forward-facing robot FPV stream.
+* **Instant Mode Switching:** Effortlessly switch between full **Autonomous Mode** and low-latency **Manual Override**.
+* **Zero-Install Client:** Powered by MQTT over WebSockets (`ws://<PI_IP>:9001/mqtt`), running in any modern desktop or mobile browser.
+
+---
+
+## 🏗️ High-Level System Architecture
 
 ```mermaid
-graph TD
-    %% Nodes
-    subgraph Laptop [Stationary Vision Node & Console]
-        VN[Vision Node: Vision.py]
-        WCC[Web Command Center: index.html]
+flowchart LR
+    subgraph Base_Station ["🖥️ Base Station (Vision Node)"]
+        VISION["AI Vision Engine\n(PyTorch + Keras)"]
+        TRANSFORM["ArUco PnP\nSpatial Transformer"]
+        FLASK["Flask Multi-Stream Server\n(Port 5000)"]
     end
 
-    subgraph RPi [Mobile Edge Node: Raspberry Pi 4]
-        MB[Mosquitto Broker]
-        
-        subgraph ROS2 [ROS 2 Humble / Jazzy Stack]
-            NAV[Nav2 Navigation Stack]
-            SLAM[SLAM Toolbox]
-            LO[Laser Odometry]
-            LP[Lidar Publisher]
-            MC[Motor Controller]
-            NC[MQTT Nav Client]
-            PUMP[Pump Controller]
-            NOZ[Nozzle Controller]
-            EMB[MQTT Motor Bridge]
-        end
+    subgraph Robot_Edge ["🤖 Phoenix Edge (Raspberry Pi 4)"]
+        BROKER["Mosquitto MQTT Broker\n(Ports 1883 & 9001)"]
+        ROS_STACK["ROS 2 Core Stack\n(SLAM Toolbox + Nav2 + RF2O)"]
+        DRIVERS["Hardware Controllers\n(BTS7960 Motors + Gimbal + Pump)"]
+        PICAM["Pi Camera Stream"]
     end
 
-    %% Communication Channels
-    VN -- "1. Target Coordinates (ambers/robot/navigation/target)" --> MB
-    MB -- "2. Goal Coordinates" --> NC
-    NC -- "3. NavigateToPose" --> NAV
+    subgraph Operator ["🎮 Operator Console"]
+        HUD["Web Command Center\n(Dual HUD + Telemetry + Joystick)"]
+    end
+
+    VISION --> TRANSFORM
+    TRANSFORM -- "Target Coordinates" --> BROKER
+    BROKER --> ROS_STACK
+    ROS_STACK --> DRIVERS
     
-    LP -- "/scan" --> LO
-    LP -- "/scan" --> SLAM
-    LP -- "/scan" --> NAV
-    LO -- "/odom" --> SLAM
-    LO -- "/odom" --> NAV
-    NAV -- "/cmd_vel" --> MC
-    
-    WCC -- "Manual Movement (phoenix/cmd/move)" --> MB
-    MB -- "cmd_vel conversion" --> EMB
-    EMB -- "/cmd_vel" --> MC
-    
-    WCC -- "Manual Water Pump (phoenix/cmd/water)" --> MB
-    MB -- "Pump Relay Trigger" --> PUMP
-    
-    WCC -- "Manual Nozzle (phoenix/cmd/nozzle)" --> MB
-    MB -- "Servo Control" --> NOZ
+    HUD <== "WebSockets Telemetry & Control" ==> BROKER
+    FLASK -. "Surveillance Feed" .-> HUD
+    PICAM -. "FPV Pilot Feed" .-> HUD
 ```
 
 ---
 
-## 📡 MQTT Topic Reference
+## ⚙️ Technical Specifications
 
-The system utilizes a local **Mosquitto MQTT Broker** (port `1883` for ROS 2 nodes, and WebSocket port `9001` for the Web Dashboard) for latency-free communication:
-
-| Topic | Publisher | Subscriber | Commands / Payload | Purpose |
-| :--- | :--- | :--- | :--- | :--- |
-| `phoenix/cmd/move` | Web Dashboard | `mqtt_motor_bridge` | `FORWARD`, `BACKWARD`, `LEFT`, `RIGHT`, `STOP` | Manual drive overrides |
-| `phoenix/cmd/water` | Web Dashboard | `pump_controller` | `ON`, `OFF` | Hold-to-spray water pump activation |
-| `phoenix/cmd/nozzle` | Web Dashboard | `nozzle_controller` | `LEFT`, `RIGHT`, `UP`, `DOWN`, `STOP`, `CENTER` | Continuous panning & step tilting |
-| `ambers/robot/navigation/target` | Vision Node | `mqtt_nav_client` | `{"x": float, "y": float}` | Auto navigation goal to detected flame |
-| `ambers/robot/status` | `mqtt_nav_client` | Vision Node | `{"status": string}` | Navigation status telemetry |
-
----
-
-## 📂 Project Structure
-
-```
-phoenix_robot/
-├── ambers_ws/                  # ROS 2 Workspace (Pi 4)
-│   └── src/
-│       ├── phoenix_control/    # Hardware and MQTT bridge nodes
-│       └── phoenix_description/# URDF, transforms, and navigation configs
-├── vision_node/                # Laptop Vision Stack (Custom PyTorch Flame Model + Fall/Human Keras Models + ArUco)
-├── Phoenix_Web_Command_Center/ # Operator Control Dashboard (HTML5 / Vanilla CSS / JS)
-├── Local_MQTT/                 # Local Mosquitto MQTT broker configuration
-├── scripts/                    # Automation and utility scripts
-├── runs/                       # Output logs and system run records
-├── docs/                       # Research documents & project reports
-├── phoenix_run_guide.md        # Comprehensive execution and setup guide
-├── speed_calculations.md       # Math and theory behind robot speed and gear ratio
-└── README.md                   # Main documentation (this file)
-```
+| Parameter | Specification |
+| :--- | :--- |
+| **Chassis Dimensions** | $465\text{ mm (L)} \times 355\text{ mm (W)} \times 200\text{ mm (H)}$ |
+| **Total Weight** | $\approx 5.4\text{ kg}$ (Including batteries and suppression reservoir) |
+| **Drive Configuration**| 4-Wheel Skid-Steer / Differential Drive |
+| **Locomotion Motors** | 4x 12V DC High-Torque Gear Motors ($300\text{ RPM}$) driven by 2x BTS7960 ($43\text{A}$) |
+| **Edge Compute** | Raspberry Pi 4 Model B (4GB / 8GB RAM, Quad-Core Cortex-A72 @ 1.5GHz) |
+| **LiDAR Sensor** | Okdo LD06 TOF (360° scanning, $12\text{ m}$ radius, $4500\text{ Hz}$ sample frequency) |
+| **Visual Sensors** | Robot Pi Camera (FPV) + TP-Link Tapo C200 1080p (Surveillance & AI tracking) |
+| **Suppression Pump** | 24V DC High-Pressure Diaphragm Pump (Self-Priming) |
+| **Gimbal Turret** | 2-DOF ($360^\circ$ Continuous Yaw + $180^\circ$ Positional Pitch) |
+| **Power Distribution**| 12V Li-ion (Drive Motors) + 24V Li-ion (Pump) + 5V/3A UBEC (Edge Logic) |
+| **Software Stack** | ROS 2 (Humble/Jazzy), PyTorch, TensorFlow, OpenCV, Paho MQTT, Flask |
 
 ---
 
-### 1. Build and Prepare (Raspberry Pi)
-Verify that helper scripts are executable:
+## 🚒 Mission Workflow
+
+```
+[ 1. AI Hazard Detection ]  ──►  Overhead camera detects flame centroid & checks for casualties
+           │
+[ 2. Metric Projection ]   ──►  ArUco PnP solver projects pixel (u, v) into arena coordinate (X, Y)
+           │
+[ 3. Target Dispatch ]     ──►  MQTT publishes target coordinate to ambers/robot/navigation/target
+           │
+[ 4. Autonomous Nav ]      ──►  Nav2 plans collision-free path using rf2o laser odometry & SLAM
+           │
+[ 5. Standoff Lock ]       ──►  Robot halts at 0.30m safe distance from fire and signals operator
+           │
+[ 6. Precision Extinguish ] ──►  Operator directs pan-tilt turret and triggers 24V suppression spray
+```
+
+---
+
+## ⚡ Quickstart Guide
+
+### 1. Build Edge Workspace (Raspberry Pi 4)
 ```bash
 chmod +x scripts/*.sh
-```
-Build the workspace using the helper script:
-```bash
 ./scripts/build.sh
 ```
 
-### 2. Vision Node Setup (Laptop)
-Ensure Python 3.8+ is installed:
+### 2. Launch Unified Robot Stack (Raspberry Pi 4)
+```bash
+export ROS_DOMAIN_ID=30
+source ambers_ws/install/setup.bash
+ros2 launch phoenix_description phoenix_bringup.launch.py
+```
+
+### 3. Launch AI Vision Engine (Laptop)
 ```bash
 cd vision_node
 pip install -r requirements.txt
 python Vision.py
 ```
 
-### 3. Launching Robot Nodes
-Open individual SSH terminal windows on the Raspberry Pi and execute the following:
-* **Terminal 1 (Lidar):** `ros2 run phoenix_control lidar_publisher`
-* **Terminal 2 (Laser Odom):** `ros2 launch phoenix_description laser_odom.launch.py`
-* **Terminal 3 (SLAM):** `ros2 launch slam_toolbox online_async_launch.py slam_params_file:=/home/ambers/ambers_ws/src/phoenix_description/config/mapper_params_online_async.yaml use_sim_time:=False`
-* **Terminal 4 (Nav2):** `ros2 launch nav2_bringup navigation_launch.py use_sim_time:=False`
-* **Terminal 5 (Motors):** `ros2 run phoenix_control motor_controller`
-* **Terminal 6 (Nav Client):** `ros2 run phoenix_control mqtt_nav_client`
-* **Terminal 7 (Pump Node):** `ros2 run phoenix_control pump_controller`
-* **Terminal 8 (Nozzle Node):** `ros2 run phoenix_control nozzle_controller`
-* **Terminal 9 (Pi Camera):** `bash ~/ambers_ws/scripts/start_pi_camera_stream.sh`
-* **Terminal 10 (Web Bridge):** `ros2 run phoenix_control mqtt_motor_bridge`
-
-### 4. Open Web Command Center
-1. Open [index.html](file:///c:/Users/basse/OneDrive%20-%20King%20Salman%20International%20University/Graduation%20Project/phoenix_robot/Phoenix_Web_Command_Center/index.html) in any modern browser.
-2. Under the **Settings** tab, configure the **Broker WS** to `ws://<PI_IP>:9001/mqtt` (replace `<PI_IP>` with your Pi's actual IP).
-3. Connect and switch to **Manual** mode to pilot the robot and operate the suppression actuators.
+### 4. Connect Web Command Center (Browser)
+1. Open [index.html](file:///c:/Users/basse/OneDrive%20-%20King%20Salman%20International%20University/Graduation%20Project/phoenix_robot/Phoenix_Web_Command_Center/index.html) in your browser.
+2. In **⚙ Settings**, set **BROKER WS** to `ws://<PI_IP>:9001/mqtt`.
+3. Click **⚡ CONNECT TO BROKER**.
 
 ---
 
-## 🚒 How the Mission Works
-1. **Flame Detection:** The stationary `Vision.py` uses a custom-trained PyTorch model (and HSV fallback for smaller candle flames) to recognize fire, alongside Keras models for Human and Fall detection. It projects pixel coordinates to 3D navigation targets using ArUco marker references.
-2. **Autonomous Travel:** Targets are dispatched to `mqtt_nav_client`, sending a Goal Pose to Nav2. The robot navigates autonomously using real-time Laser Odometry and the SLAM-built costmap.
-3. **Safe Distance Arrival:** Once within `0.3m` (30cm) of the candle, navigation halts and locks.
-4. **Manual Suppression:** The operator uses the **Web Command Center** to command the continuous panning/tilting nozzle servos and activate the 24V water pump relay using the hold-to-spray interface to extinguish the flame.
+## 📚 Technical Documentation Index
+
+For deep architectural analyses, math models, and hardware references, explore the dedicated documentation modules:
+
+| Documentation Module | Description |
+| :--- | :--- |
+| 🏗️ [System Architecture & Topology](docs/system_architecture.md) | Split-node topology, ROS 2 DDS graph, TF2 tree, and MQTT schemas |
+| 👁️ [AI Vision & Spatial Perception](docs/ai_vision_pipeline.md) | PyTorch flame CNN, Keras life detection models, and ArUco 3D PnP projection |
+| 🧭 [Navigation, SLAM & Motor Control](docs/navigation_and_control.md) | Nav2 stack, SLAM Toolbox online async mapping, RF2O laser odometry & BTS7960 drivers |
+| 🚒 [Suppression Actuators & Gimbal](docs/suppression_actuators.md) | 2-DOF Pan-Tilt gimbal mechanics, 24V pump relay, and hold-to-spray safety |
+| 🎮 [Web Command Center & HUD](docs/web_command_center.md) | Operator HUD layout, telemetry gauges, dual-camera streaming & virtual controls |
+| 🔌 [Hardware Specifications & Wiring](docs/hardware_and_wiring.md) | Bill of materials, complete Raspberry Pi GPIO pinout table, and power distribution |
+| 🚀 [Phoenix Run & Execution Guide](phoenix_run_guide.md) | Step-by-step terminal execution, networking, and manual debugging runbook |
+| 📐 [Speed & Kinematics Calculations](speed_calculations.md) | Mathematical formulas and physical factors for skid-steer speed estimation |
+| 💻 [Useful CLI Commands](docs/useful_commands.md) | Hardware diagnostics, topic echo, and selective package build commands |
+
+---
+
+## 👥 Project Team & Acknowledgments
+
+Developed as the Senior Graduation Capstone Project (**IRFFLD - Intelligent Robot for Fire Fighting and Life Detection**) at **King Salman International University (KSIU)**.
+
+### Team AMBERS:
+* **Bassel Elbahnasy** (Lead Robotics & AI Engineering)
+* **Amin**
+* **Ebrahim**
+* **Hamsa**
+* **Yousef ElSaket**
+
+---
+
+<p align="center">
+  <sub>Built with passion for emergency robotics and autonomous life-saving systems.</sub>
+</p>
