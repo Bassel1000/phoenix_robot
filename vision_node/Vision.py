@@ -118,6 +118,37 @@ def calculate_transformation_matrix(image_frame, camera_matrix, dist_coeffs, mar
     return transformation_matrix, image_frame, marker_center
 
 
+def project_pixel_to_ground(u, v, camera_matrix, T_ground):
+    """
+    Intersects the optical camera ray through pixel (u, v) with the arena ground plane (Z = 0 in T_ground).
+    Returns (x_ground, y_ground) in meters in the ground coordinate system.
+    """
+    R = T_ground[0:3, 0:3]
+    t = T_ground[0:3, 3]
+
+    # Ground plane normal in camera coordinates (Z-axis of marker)
+    n_c = R[:, 2]
+
+    # Unproject pixel (u, v) to ray in camera coordinates
+    fx = float(camera_matrix[0, 0])
+    fy = float(camera_matrix[1, 1])
+    cx = float(camera_matrix[0, 2])
+    cy = float(camera_matrix[1, 2])
+    ray_c = np.array([(u - cx) / fx, (v - cy) / fy, 1.0], dtype=np.float32)
+
+    denom = float(np.dot(ray_c, n_c))
+    if abs(denom) < 1e-6:
+        return None, None
+
+    s = float(np.dot(t, n_c)) / denom
+    if s <= 0:
+        return None, None
+
+    p_c = s * ray_c
+    p_ground = R.T @ (p_c - t)
+    return float(p_ground[0]), float(p_ground[1])
+
+
 class CameraStream:
     """
     Continually grabs frames from the camera in a background thread.
@@ -125,8 +156,15 @@ class CameraStream:
     when running heavy neural networks (like PyTorch and Keras).
     """
     def __init__(self, src):
+        self.is_file = False
+        if isinstance(src, str) and src.isdigit():
+            src = int(src)
+        elif isinstance(src, str) and (src.endswith(('.mp4', '.avi', '.mov', '.mkv', '.png', '.jpg')) or os.path.isfile(src)):
+            self.is_file = True
+
         self.stream = cv2.VideoCapture(src)
-        self.stream.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if not self.is_file:
+            self.stream.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.grabbed, self.frame = self.stream.read()
         self.stopped = False
         
@@ -143,7 +181,18 @@ class CameraStream:
                 self.stopped = True
                 break
             # Drains the internal buffer constantly, keeping only the most recent frame
-            self.grabbed, self.frame = self.stream.read()
+            grabbed, frame = self.stream.read()
+            if not grabbed:
+                if self.is_file:
+                    self.stream.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    time.sleep(0.033)
+                    continue
+                else:
+                    self.stopped = True
+                    break
+            self.grabbed, self.frame = grabbed, frame
+            if self.is_file:
+                time.sleep(0.033)
 
     def read(self):
         return self.grabbed, self.frame
@@ -356,6 +405,9 @@ if __name__ == '__main__':
     # Navigation Origin Calibration & Cooldown state
     robot_start_x = None
     robot_start_y = None
+    robot_start_T = None
+    robot_start_R = None
+    robot_start_t = None
     last_heartbeat_time = 0.0
     last_goal_time = 0.0
 
@@ -410,17 +462,23 @@ if __name__ == '__main__':
         robot_y = None
 
         if T_matrix is not None:
-            robot_x = T_matrix[0, 3]
-            robot_z = T_matrix[2, 3] # Use Camera Z (depth) for Map Y
+            robot_x = float(T_matrix[0, 3])
+            robot_z = float(T_matrix[2, 3])
             
-            # Calibrate start position on first valid detection to align map frame
-            if robot_start_x is None:
+            # Calibrate start transformation matrix on first valid detection to align map frame
+            if robot_start_T is None:
+                robot_start_T = np.copy(T_matrix)
+                robot_start_R = np.copy(T_matrix[0:3, 0:3])
+                robot_start_t = np.copy(T_matrix[0:3, 3])
                 robot_start_x = robot_x
                 robot_start_y = robot_z
-                print(f"[CALIBRATION] Robot origin set to camera coordinates ({robot_start_x:.3f}, {robot_start_y:.3f})")
+                print(f"[CALIBRATION] Robot ground frame calibrated at camera coordinates ({robot_start_x:.3f}, {robot_start_y:.3f})")
             
-            robot_x_map = robot_x - robot_start_x
-            robot_y_map = robot_z - robot_start_y
+            # Transform current robot marker position to start/map ground frame
+            p_robot_c = T_matrix[0:3, 3]
+            p_robot_map = robot_start_R.T @ (p_robot_c - robot_start_t)
+            robot_x_map = float(p_robot_map[0])
+            robot_y_map = float(p_robot_map[1])
 
         # 3. Run Pre-trained YOLOv8 Fire Detection on the SAME Tapo frame
         fire_active = False # Flag to trigger downstream MQTT pipelines
@@ -553,59 +611,53 @@ if __name__ == '__main__':
             
             # Extract bounding box pixel coordinates
             x1, y1, x2, y2 = det['x1'], det['y1'], det['x2'], det['y2']
-                box_w = x2 - x1
-                box_h = y2 - y1
-                box_area_ratio = (box_w * box_h) / frame_area
-                box_width_ratio = box_w / float(frame_w)
-                box_height_ratio = box_h / float(frame_h)
+            box_w = x2 - x1
+            box_h = y2 - y1
+            box_area_ratio = (box_w * box_h) / frame_area
+            box_width_ratio = box_w / float(frame_w)
+            box_height_ratio = box_h / float(frame_h)
 
-                # Ignore giant detections, border-touching detections, and detections floating high in the image.
-                if box_area_ratio > max_box_area_ratio:
+            # Ignore giant detections, border-touching detections, and detections floating high in the image.
+            if box_area_ratio > max_box_area_ratio:
+                continue
+            if box_width_ratio > max_box_width_ratio or box_height_ratio > max_box_height_ratio:
+                continue
+            if x1 <= edge_margin_px or x2 >= (frame_w - edge_margin_px):
+                continue
+
+            # 2D PIXEL FILTER: Ignore if it overlaps with the robot's ArUco marker
+            # Reduced to 80px to allow candle detection near the robot
+            if marker_center is not None:
+                u_fire_center = (x1 + x2) / 2.0
+                v_fire_center = (y1 + y2) / 2.0
+                dist_px = np.sqrt((u_fire_center - marker_center[0])**2 + (v_fire_center - marker_center[1])**2)
+                if dist_px < 80:
                     continue
-                if box_width_ratio > max_box_width_ratio or box_height_ratio > max_box_height_ratio:
-                    continue
-                if x1 <= edge_margin_px or x2 >= (frame_w - edge_margin_px):
-                    continue
 
-                # 2D PIXEL FILTER: Ignore if it overlaps with the robot's ArUco marker
-                # Reduced to 80px to allow candle detection near the robot
-                if marker_center is not None:
-                    u_fire_center = (x1 + x2) / 2.0
-                    v_fire_center = (y1 + y2) / 2.0
-                    dist_px = np.sqrt((u_fire_center - marker_center[0])**2 + (v_fire_center - marker_center[1])**2)
-                    if dist_px < 80:
-                        continue
+            if conf > max_conf:
+                # Draw bounding box for operator visibility (always, even without ArUco)
+                cv2.rectangle(display_frame_tapo, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                label = f"Fire AI: {conf:.2f}"
+                cv2.putText(display_frame_tapo, label, (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
-                if conf > max_conf:
-                    # Draw bounding box for operator visibility (always, even without ArUco)
-                    cv2.rectangle(display_frame_tapo, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                    label = f"Fire AI: {conf:.2f}"
-                    cv2.putText(display_frame_tapo, label, (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                fire_active = True
+                last_fire_detect_time = current_time
+                max_conf = conf
 
-                    fire_active = True
-                    last_fire_detect_time = current_time
-                    max_conf = conf
+                # Calculate 3D navigation target using ray-plane ground intersection
+                ref_ground_T = robot_start_T if robot_start_T is not None else T_matrix
+                if ref_ground_T is not None:
+                    # Calculate pixel center of the fire base (where it touches the floor)
+                    u_fire = (x1 + x2) / 2.0
+                    v_fire = float(y2)
+                    
+                    fx_t, fy_t = project_pixel_to_ground(u_fire, v_fire, placeholder_camera_matrix, ref_ground_T)
+                    if fx_t is not None:
+                        fire_x_target = fx_t
+                        fire_y_target = fy_t
 
-                    # Only calculate navigation target if ArUco tracking is active
-                    if T_matrix is not None and robot_start_x is not None:
-                        # Calculate pixel center of the fire base (where it touches the floor)
-                        u_fire = (x1 + x2) / 2.0
-                        v_fire = y2
-                        
-                        # Pinhole projection mapping to camera coordinate space
-                        z_floor = T_matrix[2, 3]
-                        fx = placeholder_camera_matrix[0, 0]
-                        fy = placeholder_camera_matrix[1, 1]
-                        cx = placeholder_camera_matrix[0, 2]
-                        cy = placeholder_camera_matrix[1, 2]
-                        
-                        x_fire_cam = ((u_fire - cx) * z_floor) / fx
-                        
-                        fire_x_target = x_fire_cam - robot_start_x
-                        fire_y_target = 0.0 # Force robot to drive straight toward X
-
-                        # 3D Map-Space Filter: Ignore targets too close to robot
+                        # 3D Map-Space Filter: Ignore targets too close to robot or start
                         dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
                         dist_to_robot = 999.0
                         if robot_x_map is not None and robot_y_map is not None:
@@ -624,30 +676,25 @@ if __name__ == '__main__':
             last_fire_detect_time = current_time
             max_conf = 0.5  # Give HSV detection a default confidence
 
-            # Only calculate navigation target if ArUco tracking is active
-            if T_matrix is not None and robot_start_x is not None:
-                # Convert HSV pixel coordinates to 3D space using pinhole projection
-                z_floor = T_matrix[2, 3]
-                fx = placeholder_camera_matrix[0, 0]
-                fy = placeholder_camera_matrix[1, 1]
-                cx = placeholder_camera_matrix[0, 2]
-                cy = placeholder_camera_matrix[1, 2]
-                
-                x_fire_cam = ((hsv_x - cx) * z_floor) / fx
-                fire_x_target = x_fire_cam - robot_start_x
-                fire_y_target = 0.0 # Force robot to drive straight toward X
-                
-                # Apply 3D distance filter
-                dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
-                dist_to_robot = 999.0
-                if robot_x_map is not None and robot_y_map is not None:
-                    dist_to_robot = np.sqrt((fire_x_target - robot_x_map)**2 + (fire_y_target - robot_y_map)**2)
-                
-                if dist_to_start >= 0.15 and dist_to_robot >= 0.15:
-                    # Latch the HSV detection
-                    latched_fire_x = fire_x_target
-                    latched_fire_y = fire_y_target
-                    latched_fire_active = True
+            # Calculate navigation target using ray-plane ground intersection
+            ref_ground_T = robot_start_T if robot_start_T is not None else T_matrix
+            if ref_ground_T is not None:
+                fx_t, fy_t = project_pixel_to_ground(hsv_x, hsv_y, placeholder_camera_matrix, ref_ground_T)
+                if fx_t is not None:
+                    fire_x_target = fx_t
+                    fire_y_target = fy_t
+                    
+                    # Apply 3D distance filter
+                    dist_to_start = np.sqrt(fire_x_target**2 + fire_y_target**2)
+                    dist_to_robot = 999.0
+                    if robot_x_map is not None and robot_y_map is not None:
+                        dist_to_robot = np.sqrt((fire_x_target - robot_x_map)**2 + (fire_y_target - robot_y_map)**2)
+                    
+                    if dist_to_start >= 0.15 and dist_to_robot >= 0.15:
+                        # Latch the HSV detection
+                        latched_fire_x = fire_x_target
+                        latched_fire_y = fire_y_target
+                        latched_fire_active = True
 
         # 3.2 Latch override and arrival check
         if latched_fire_active:
@@ -687,10 +734,10 @@ if __name__ == '__main__':
                 print(f"MQTT publish error (fire_detected): {e}")
 
             if fire_active and fire_x_target is not None and fire_y_target is not None:
-                if T_matrix is None:
+                if T_matrix is None and robot_start_T is None:
                     print("[NAV HOLD] Robot marker lost. Navigation target not published.")
                 else:
-                    d_safe = 0.3  # Stop 30cm away from candle (reduced from 80cm)
+                    d_safe = 0.3  # Stop 30cm away from candle (standoff distance)
                     dx = fire_x_target - robot_x_map
                     dy = fire_y_target - robot_y_map
                     d_total = np.sqrt(dx**2 + dy**2)
@@ -698,20 +745,22 @@ if __name__ == '__main__':
                     if d_total > d_safe:
                         x_nav = fire_x_target - (d_safe * dx / d_total)
                         y_nav = fire_y_target - (d_safe * dy / d_total)
-                        yaw_nav = math.atan2(dy, dx) + math.pi
+                        # Head directly towards the fire from standoff position
+                        yaw_nav = math.atan2(dy, dx)
                         
                         nav_payload = {
                             "x": round(float(x_nav), 3),
                             "y": round(float(y_nav), 3),
-                            "yaw": round(float(yaw_nav), 3)
+                            "yaw": round(float(yaw_nav), 3),
+                            "frame_id": "map"
                         }
                         try:
                             mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
-                            print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f} (Distance left: {d_total:.3f}m)")
+                            print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f}, yaw={yaw_nav:.3f} (Distance left: {d_total:.3f}m)")
                         except Exception as e:
                             print(f"MQTT publish error (navigation target): {e}")
                     else:
-                        print(f"[TARGET REACHED] Robot within safe distance ({d_total:.3f}m <= {d_safe}m). Use web UI to control pump/nozzle!")
+                        print(f"[TARGET REACHED] Robot within safe distance ({d_total:.3f}m <= {d_safe}m). Standoff lock active!")
             
             last_goal_time = current_time
 

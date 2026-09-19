@@ -2,7 +2,7 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, ExecuteProcess
+from launch.actions import IncludeLaunchDescription, ExecuteProcess, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
@@ -34,7 +34,7 @@ def generate_launch_description():
         }.items()
     )
 
-    # 4. Nav2 Stack
+    # 4. Nav2 Stack (delayed by 15s to allow laser odometry & SLAM to establish TF map -> odom -> base_footprint)
     nav2_bringup_dir = get_package_share_directory('nav2_bringup')
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -45,6 +45,7 @@ def generate_launch_description():
             'params_file': os.path.join(phoenix_desc_dir, 'config', 'nav2_params.yaml')
         }.items()
     )
+    delayed_nav2 = TimerAction(period=15.0, actions=[nav2_launch])
 
     # 5. Motor Controller
     motor_node = Node(
@@ -86,7 +87,7 @@ def generate_launch_description():
         lidar_node,
         laser_odom_launch,
         slam_launch,
-        nav2_launch,
+        delayed_nav2,
         motor_node,
         mqtt_nav_node,
         pump_node,

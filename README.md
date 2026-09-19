@@ -143,7 +143,40 @@ source ambers_ws/install/setup.bash
 ros2 launch phoenix_description phoenix_bringup.launch.py
 ```
 
-### 3. Launch AI Vision Engine (Laptop)
+### 2a. Run Full Mission in Simulation (Gazebo Harmonic)
+
+The repository includes a complete Gazebo Harmonic simulation environment with full Web Command Center and MQTT integration:
+
+```bash
+source /opt/ros/$ROS_DISTRO/setup.bash
+cd ambers_ws
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch phoenix_description simulation.launch.py
+```
+
+* **Fully Integrated:** Bridges LiDAR (`/scan`), odometry (`/odom`), driving (`/cmd_vel`), camera (`/camera/image_raw`), and clock (`/clock`).
+* **Web HUD Ready:** Automatically launches MQTT control bridges (`mqtt_nav_client`, `mqtt_motor_bridge`, `pump_controller`, `nozzle_controller`) with simulation time enabled (`use_sim_time:=True`).
+* **Visual Fire Target:** The test arena includes an emissive flame target cylinder at `(2.5, 2.0, 0.2)`.
+
+In a second terminal, after sourcing the workspace, dispatch a map-frame goal:
+
+```bash
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.0, y: 1.5}, orientation: {w: 1.0}}}}"
+```
+
+Useful telemetry checks:
+
+```bash
+ros2 topic hz /scan
+ros2 topic hz /odom
+ros2 topic hz /camera/image_raw
+ros2 run tf2_tools view_frames
+ros2 topic echo /map --once
+```
+
+### 3. Launch AI Vision Engine (Laptop / Workstation)
 ```bash
 cd vision_node
 pip install -r requirements.txt
@@ -151,9 +184,12 @@ python Vision.py
 ```
 
 ### 4. Connect Web Command Center (Browser)
-1. Open [index.html](file:///c:/Users/basse/OneDrive%20-%20King%20Salman%20International%20University/Graduation%20Project/phoenix_robot/Phoenix_Web_Command_Center/index.html) in your browser.
-2. In **⚙ Settings**, set **BROKER WS** to `ws://<PI_IP>:9001/mqtt`.
+1. Open `Phoenix_Web_Command_Center/index.html` in your browser.
+2. In **⚙ Settings**, choose your target preset:
+   - Click **Local Sim (9001)** for Gazebo simulation (`ws://localhost:9001/mqtt`).
+   - Click **Robot Pi (Live)** for the physical robot (`ws://<PI_IP>:9001/mqtt`).
 3. Click **⚡ CONNECT TO BROKER**.
+4. Switch to **MANUAL** mode to drive via D-Pad, test water suppression, or direct the nozzle.
 
 ---
 

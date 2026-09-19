@@ -14,19 +14,28 @@
 ═══════════════════════════════════════════════ */
 :root {
   --bg:        #070911;
+  --bg-obsidian:#0D0F17;
   --s1:        #0d0f1a;
   --s2:        #12151f;
   --s3:        #181c28;
   --b1:        rgba(255,80,30,0.16);
   --b2:        rgba(255,255,255,0.07);
   --b3:        rgba(255,255,255,0.04);
+  --brand-crimson: #821C2C;
+  --brand-crimson-glow: rgba(130, 28, 44, 0.45);
+  --accent-sky-blue: #0284C7;
+  --accent-sky-glow: rgba(2, 132, 199, 0.35);
   --fire:      #ff4f1a;
   --fire2:     #ff8c3a;
   --fire3:     #ffbf6b;
+  --fire-flame-1: #FDE047;
+  --fire-flame-2: #FB923C;
+  --fire-flame-3: #F97316;
+  --fire-flame-4: #EF4444;
   --ok:        #00e5a0;
   --warn:      #ffb340;
   --danger:    #ff2d2d;
-  --info:      #5bc8ff;
+  --info:      #0284C7;
   --human:     #c084fc;
   --text:      #eeeaf4;
   --dim:       #7d7590;
@@ -71,14 +80,31 @@ body::before {
 
 .brand { display: flex; align-items: center; gap: .75rem; flex-shrink: 0; }
 .brand-icon {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--fire), var(--fire2));
+  width: 40px; height: 40px; border-radius: 10px;
+  background: #0D0F17;
+  border: 1px solid rgba(249, 115, 22, 0.4);
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.1rem;
-  box-shadow: 0 0 18px rgba(255,79,26,.45);
+  overflow: hidden;
+  padding: 2px;
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.4);
+  animation: phoenixFlameGlow 3s ease-in-out infinite;
 }
-.brand-name { font-family: var(--cond); font-weight: 900; font-size: 1.15rem; letter-spacing: .12em; }
+.brand-icon img { width: 100%; height: 100%; object-fit: contain; }
+.brand-name { font-family: var(--cond); font-weight: 900; font-size: 1.15rem; letter-spacing: .12em; color: #fff; }
 .brand-sub  { font-size: .6rem; color: var(--dim); letter-spacing: .05em; }
+
+@keyframes phoenixFlameGlow {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(249, 115, 22, 0.5), 0 0 24px rgba(130, 28, 44, 0.4);
+    border-color: rgba(249, 115, 22, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(253, 224, 71, 0.75), 0 0 32px rgba(239, 68, 68, 0.6);
+    border-color: rgba(253, 224, 71, 0.7);
+    transform: scale(1.05);
+  }
+}
 
 .topbar-pills { display: flex; gap: .4rem; flex-wrap: wrap; }
 .pill {
@@ -465,10 +491,12 @@ canvas.chart { width: 100%; height: 64px; }
 <!-- ─── TOP BAR ────────────────────────────── -->
 <header class="topbar">
   <div class="brand">
-    <div class="brand-icon">🔥</div>
+    <div class="brand-icon">
+      <img src="images/phoenix_logo_fire.png" alt="Phoenix Fire Logo" />
+    </div>
     <div>
       <div class="brand-name">PHOENIX</div>
-      <div class="brand-sub">Fire Extinguishing Mobile Robot — Team AMBERS</div>
+      <div class="brand-sub">Autonomous Fire Suppression System — Team AMBERS</div>
     </div>
   </div>
 
@@ -599,6 +627,13 @@ canvas.chart { width: 100%; height: 64px; }
             <span class="mqtt-badge" id="mqttBadge2"><span class="d"></span><span id="mqttBadge2Txt">OFFLINE</span></span>
           </div>
           <div class="settings-body">
+            <div class="cfg-row" style="margin-bottom: .2rem;">
+              <span class="cfg-lbl">TARGET PRESET</span>
+              <div style="display:flex; gap:0.4rem; flex:1;">
+                <button type="button" class="s-btn orange" style="font-size:0.65rem; padding:0.35rem 0.65rem; flex:1;" onclick="setBrokerPreset('sim')">Local Sim (9001)</button>
+                <button type="button" class="s-btn green" style="font-size:0.65rem; padding:0.35rem 0.65rem; flex:1;" onclick="setBrokerPreset('pi')">Robot Pi (Live)</button>
+              </div>
+            </div>
             <div class="cfg-row"><span class="cfg-lbl">BROKER WS</span><input class="cfg-in" id="cfgBroker" value="ws://localhost:9001/mqtt" placeholder="ws://localhost:9001/mqtt" /></div>
             <div class="cfg-row"><span class="cfg-lbl">CLIENT ID</span><input class="cfg-in" id="cfgClient" value="phoenix-dash-001" /></div>
             <div class="cfg-row"><span class="cfg-lbl">USERNAME</span><input class="cfg-in" id="cfgUser"   placeholder="(optional)" /></div>
@@ -810,6 +845,18 @@ async function loadEnvConfig() {
         toggleMqtt();
       }
     }, 800);
+  }
+}
+
+function setBrokerPreset(target) {
+  if (target === 'sim') {
+    $('cfgBroker').value = 'ws://localhost:9001/mqtt';
+    localStorage.setItem('cfgBroker', 'ws://localhost:9001/mqtt');
+    addLog('Preset applied: Local Simulation (ws://localhost:9001/mqtt)', 'ok');
+  } else if (target === 'pi') {
+    const saved = localStorage.getItem('cfgBroker_pi') || 'ws://192.168.1.100:9001/mqtt';
+    $('cfgBroker').value = saved;
+    addLog(`Preset applied: Robot Pi (${saved}) - please update IP if needed`, 'info');
   }
 }
 

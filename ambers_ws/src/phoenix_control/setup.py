@@ -33,6 +33,7 @@ setup(
             'pump_controller = phoenix_control.pump_controller:main',
             'nozzle_controller = phoenix_control.nozzle_controller:main',
             'mqtt_motor_bridge = phoenix_control.mqtt_motor_bridge:main',
+            'simulation_odom_tf = phoenix_control.simulation_odom_tf:main',
         ],
     },
 )

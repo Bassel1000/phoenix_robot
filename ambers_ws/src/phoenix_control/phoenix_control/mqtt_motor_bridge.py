@@ -13,9 +13,11 @@ class MqttMotorBridge(Node):
         # Publisher for motor commands
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         
-        # Speed configuration
-        self.linear_speed = 1.0   # Increased from 0.25 to 1.0 for the heavy robot
-        self.angular_speed = 1.0  # Increased from 0.5 to 1.0
+        # Speed configuration (parameterized for simulation and hardware)
+        self.declare_parameter('linear_speed', 0.35)
+        self.declare_parameter('angular_speed', 0.8)
+        self.linear_speed = float(self.get_parameter('linear_speed').value)
+        self.angular_speed = float(self.get_parameter('angular_speed').value)
         
         # Safety: auto-stop timer if no STOP command received
         self.move_timeout = 0.5  # seconds
@@ -40,7 +42,7 @@ class MqttMotorBridge(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to connect to MQTT broker: {e}")
 
-    def on_mqtt_connect(self, client, userdata, flags, rc, properties):
+    def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
         self.get_logger().info("MQTT connected, subscribing to motor commands...")
         client.subscribe("phoenix/cmd/move")
 

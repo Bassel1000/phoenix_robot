@@ -19,33 +19,40 @@ class NozzleController(Node):
             self.pin_factory = None
         
         # --- Actuator Allocation ---
-        # 360° Continuous Servo for Horizontal Panning (Yaw) -> GPIO 19
-        # Use Servo instead, set min/max pulse widths for continuous rotation
+        self.pan_servo = None
+        self.tilt_servo = None
+        self.use_continuous = False
+
         try:
-            # Try ContinuousServo first. Start detached so the nozzle does not move on boot.
-            from gpiozero import ContinuousServo
-            self.pan_servo = ContinuousServo(19, initial_value=None, pin_factory=self.pin_factory)
-            self.use_continuous = True
-        except ImportError:
-            # Fall back to Servo for compatibility
-            self.get_logger().warn("ContinuousServo not available, using Servo fallback for pan.")
-            self.pan_servo = Servo(
-                19, 
+            from gpiozero import ContinuousServo, Servo
+            # 360° Continuous Servo for Horizontal Panning (Yaw) -> GPIO 19
+            try:
+                self.pan_servo = ContinuousServo(19, initial_value=None, pin_factory=self.pin_factory)
+                self.use_continuous = True
+            except (ImportError, Exception):
+                self.get_logger().warn("ContinuousServo not available, using Servo fallback for pan.")
+                self.pan_servo = Servo(
+                    19, 
+                    initial_value=None, 
+                    min_pulse_width=0.0005, 
+                    max_pulse_width=0.0025,
+                    pin_factory=self.pin_factory
+                )
+                self.use_continuous = False
+            
+            # 180° Standard Servo for Vertical Tilting (Pitch) -> GPIO 13
+            self.tilt_servo = Servo(
+                13, 
                 initial_value=None, 
                 min_pulse_width=0.0005, 
-                max_pulse_width=0.0025,
+                max_pulse_width=0.0025, 
                 pin_factory=self.pin_factory
             )
-            self.use_continuous = False
-        
-        # 180° Standard Servo for Vertical Tilting (Pitch) -> GPIO 13
-        self.tilt_servo = Servo(
-            13, 
-            initial_value=None, 
-            min_pulse_width=0.0005, 
-            max_pulse_width=0.0025, 
-            pin_factory=self.pin_factory
-        )
+            self.get_logger().info("Pan-Tilt servos initialized successfully.")
+        except Exception as e:
+            self.get_logger().warn(f"Hardware servos not available (simulation/headless mode): {e}")
+            self.pan_servo = None
+            self.tilt_servo = None
         
         # --- State ---
         self.current_tilt = 0.0
@@ -79,7 +86,7 @@ class NozzleController(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to connect to MQTT broker: {e}")
 
-    def on_mqtt_connect(self, client, userdata, flags, rc, properties):
+    def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
         self.get_logger().info("MQTT connected, subscribing to nozzle commands...")
         client.subscribe("phoenix/cmd/nozzle")
 
@@ -106,41 +113,46 @@ class NozzleController(Node):
 
     def control_loop(self):
         # Handle Tilt
-        if self.tilt_direction != 0.0:
-            new_tilt = self.current_tilt + self.tilt_direction * self.tilt_speed
-            new_tilt = max(-1.0, min(1.0, new_tilt))
-            if new_tilt != self.current_tilt or self.tilt_is_detached:
-                self.current_tilt = new_tilt
-                self.tilt_servo.value = self.current_tilt
-                self.tilt_is_detached = False
-        else:
-            if not self.tilt_is_detached:
-                self.tilt_servo.detach()
-                self.tilt_is_detached = True
+        if self.tilt_servo is not None:
+            if self.tilt_direction != 0.0:
+                new_tilt = self.current_tilt + self.tilt_direction * self.tilt_speed
+                new_tilt = max(-1.0, min(1.0, new_tilt))
+                if new_tilt != self.current_tilt or self.tilt_is_detached:
+                    self.current_tilt = new_tilt
+                    self.tilt_servo.value = self.current_tilt
+                    self.tilt_is_detached = False
+            else:
+                if not self.tilt_is_detached:
+                    self.tilt_servo.detach()
+                    self.tilt_is_detached = True
 
         # Handle Pan
-        if self.pan_command == "LEFT":
-            self.pan_servo.value = -self.pan_speed
-            self.pan_is_detached = False
-        elif self.pan_command == "RIGHT":
-            self.pan_servo.value = self.pan_speed
-            self.pan_is_detached = False
-        elif self.pan_command == "CENTER":
-            self.current_tilt = 0.0
-            self.tilt_servo.value = 0.0
-            self.tilt_is_detached = False
-            self.pan_command = "STOP" # Center only triggers once
-        elif self.pan_command == "STOP":
-            if not self.pan_is_detached:
-                if self.use_continuous:
-                    self.pan_servo.value = 0.0
-                else:
-                    self.pan_servo.detach()
-                self.pan_is_detached = True
+        if self.pan_servo is not None:
+            if self.pan_command == "LEFT":
+                self.pan_servo.value = -self.pan_speed
+                self.pan_is_detached = False
+            elif self.pan_command == "RIGHT":
+                self.pan_servo.value = self.pan_speed
+                self.pan_is_detached = False
+            elif self.pan_command == "CENTER":
+                self.current_tilt = 0.0
+                if self.tilt_servo is not None:
+                    self.tilt_servo.value = 0.0
+                    self.tilt_is_detached = False
+                self.pan_command = "STOP" # Center only triggers once
+            elif self.pan_command == "STOP":
+                if not self.pan_is_detached:
+                    if self.use_continuous:
+                        self.pan_servo.value = 0.0
+                    else:
+                        self.pan_servo.detach()
+                    self.pan_is_detached = True
 
     def release_servos(self):
-        self.pan_servo.detach()
-        self.tilt_servo.detach()
+        if self.pan_servo is not None:
+            self.pan_servo.detach()
+        if self.tilt_servo is not None:
+            self.tilt_servo.detach()
 
 def main(args=None):
     rclpy.init(args=args)

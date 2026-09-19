@@ -20,17 +20,24 @@ class MotorController(Node):
         self.invert_right        = False  
         # --------------------------------------------
         
-        # Left Motor Driver (BTS7960)
-        self.left_fwd = PWMOutputDevice(17)
-        self.left_rev = PWMOutputDevice(27)
-        
-        # Right Motor Driver (BTS7960)
-        self.right_fwd = PWMOutputDevice(25)
-        self.right_rev = PWMOutputDevice(23)
+        # Hardware GPIO Drivers (BTS7960) with Headless/Simulation Fallback
+        self.hardware_available = False
+        try:
+            from gpiozero import PWMOutputDevice
+            self.left_fwd = PWMOutputDevice(17)
+            self.left_rev = PWMOutputDevice(27)
+            self.right_fwd = PWMOutputDevice(25)
+            self.right_rev = PWMOutputDevice(23)
+            self.hardware_available = True
+            self.get_logger().info("BTS7960 Motor Driver GPIO pins initialized.")
+        except Exception as e:
+            self.get_logger().warn(f"Hardware GPIO not available for motors (simulation/headless mode): {e}")
+            self.left_fwd = None
+            self.left_rev = None
+            self.right_fwd = None
+            self.right_rev = None
         
         # Acceleration / Smoothing Configuration
-        # 'step' is how much the speed can change every 0.05 seconds (the timer rate).
-        # We increase this to prevent double-smoothing (since Nav2 already smooths velocity).
         self.linear_step = 0.2 
         self.angular_step = 0.5
         
@@ -40,7 +47,9 @@ class MotorController(Node):
         self.current_angular = 0.0
         self.last_cmd_time = self.get_clock().now()
         
-        # Open-loop Odometry setup
+        # Odometry Configuration (Disabled by default to avoid TF fighting with rf2o / Gazebo)
+        self.declare_parameter('publish_odom_tf', False)
+        self.publish_odom_tf = bool(self.get_parameter('publish_odom_tf').value)
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
         self.odom_x = 0.0
@@ -58,6 +67,8 @@ class MotorController(Node):
         return target
 
     def set_motor(self, fwd_pin, rev_pin, speed):
+        if not self.hardware_available or fwd_pin is None or rev_pin is None:
+            return
         # Cap at 95% PWM (0.95) instead of 100% (1.0). 
         # High-power BTS7960 motor drivers use bootstrap capacitors for their MOSFETs. 
         # If driven at exactly 100% duty cycle, the capacitor discharges and the motor stalls/whines!
@@ -97,31 +108,32 @@ class MotorController(Node):
             self.odom_x += self.current_linear * math.cos(self.odom_yaw) * dt
             self.odom_y += self.current_linear * math.sin(self.odom_yaw) * dt
             
-            # Publish TF
-            t = TransformStamped()
-            t.header.stamp = self.get_clock().now().to_msg()
-            t.header.frame_id = 'odom'
-            t.child_frame_id = 'base_footprint'
-            t.transform.translation.x = float(self.odom_x)
-            t.transform.translation.y = float(self.odom_y)
-            t.transform.translation.z = 0.0
-            t.transform.rotation.z = float(math.sin(self.odom_yaw / 2.0))
-            t.transform.rotation.w = float(math.cos(self.odom_yaw / 2.0))
-            self.tf_broadcaster.sendTransform(t)
-            
-            # Publish Odometry Topic for Nav2 Velocity Feedback
-            odom = Odometry()
-            odom.header.stamp = t.header.stamp
-            odom.header.frame_id = 'odom'
-            odom.child_frame_id = 'base_footprint'
-            odom.pose.pose.position.x = float(self.odom_x)
-            odom.pose.pose.position.y = float(self.odom_y)
-            # Copy rotation fields manually to ensure strict type matching
-            odom.pose.pose.orientation.z = t.transform.rotation.z
-            odom.pose.pose.orientation.w = t.transform.rotation.w
-            odom.twist.twist.linear.x = float(self.current_linear)
-            odom.twist.twist.angular.z = float(self.current_angular)
-            self.odom_pub.publish(odom)
+            # Publish TF and Odom only if explicitly enabled (prevent fighting with rf2o / Gazebo)
+            if self.publish_odom_tf:
+                t = TransformStamped()
+                t.header.stamp = self.get_clock().now().to_msg()
+                t.header.frame_id = 'odom'
+                t.child_frame_id = 'base_footprint'
+                t.transform.translation.x = float(self.odom_x)
+                t.transform.translation.y = float(self.odom_y)
+                t.transform.translation.z = 0.0
+                t.transform.rotation.z = float(math.sin(self.odom_yaw / 2.0))
+                t.transform.rotation.w = float(math.cos(self.odom_yaw / 2.0))
+                self.tf_broadcaster.sendTransform(t)
+                
+                # Publish Odometry Topic for Nav2 Velocity Feedback
+                odom = Odometry()
+                odom.header.stamp = t.header.stamp
+                odom.header.frame_id = 'odom'
+                odom.child_frame_id = 'base_footprint'
+                odom.pose.pose.position.x = float(self.odom_x)
+                odom.pose.pose.position.y = float(self.odom_y)
+                # Copy rotation fields manually to ensure strict type matching
+                odom.pose.pose.orientation.z = t.transform.rotation.z
+                odom.pose.pose.orientation.w = t.transform.rotation.w
+                odom.twist.twist.linear.x = float(self.current_linear)
+                odom.twist.twist.angular.z = float(self.current_angular)
+                self.odom_pub.publish(odom)
         except Exception as e:
             self.get_logger().error(f"Error in motor control loop: {e}")
         
@@ -129,25 +141,21 @@ class MotorController(Node):
         B = 0.35   # Track Width
         V_max = 1.0 # Base scaling factor
 
-        # Skid-steer robots require huge torque to overcome lateral wheel friction when turning.
-        # We amplify the angular command specifically to break static friction.
-        skid_steer_turn_boost = 5.0 
-
-        v_l = self.current_linear - (self.current_angular * B / 2.0 * skid_steer_turn_boost)
-        v_r = self.current_linear + (self.current_angular * B / 2.0 * skid_steer_turn_boost)
+        v_l = self.current_linear - (self.current_angular * B / 2.0)
+        v_r = self.current_linear + (self.current_angular * B / 2.0)
 
         # Convert target velocities to normalized percentage
         left_speed = v_l / V_max
         right_speed = v_r / V_max
         
         # --- DEADBAND COMPENSATOR ---
-        # The heavy robot stalls below ~65% PWM but rockets too fast at 95% PWM.
-        # This maps any requested movement into the "usable" power band.
-        def apply_deadband(spd, deadband=0.65):
-            if abs(spd) < 0.05: return 0.0
+        # Maps requested movement into the active motor power band smoothly
+        def apply_deadband(spd, deadband=0.60):
+            if abs(spd) < 0.03: return 0.0
             sign = 1.0 if spd > 0 else -1.0
-            # Scale the speed into the active range
-            return sign * (deadband + abs(spd) * (0.95 - deadband))
+            # Scale proportionally from deadband to 0.95 to eliminate abrupt jumps
+            mag = min(max((abs(spd) - 0.03) / 0.97, 0.0), 1.0)
+            return sign * (deadband + mag * (0.95 - deadband))
             
         left_speed = apply_deadband(left_speed)
         right_speed = apply_deadband(right_speed)
@@ -176,8 +184,9 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.set_motor(node.left_fwd, node.left_rev, 0.0)
-        node.set_motor(node.right_fwd, node.right_rev, 0.0)
+        if node.hardware_available:
+            node.set_motor(node.left_fwd, node.left_rev, 0.0)
+            node.set_motor(node.right_fwd, node.right_rev, 0.0)
         node.destroy_node()
         rclpy.shutdown()
 

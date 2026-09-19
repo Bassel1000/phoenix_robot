@@ -9,10 +9,13 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <material name="black"><color rgba="0.1 0.1 0.1 1.0"/></material>
+  <material name="black"><color rgba="0.05 0.06 0.09 1.0"/></material>
+  <material name="obsidian"><color rgba="0.05 0.06 0.09 1.0"/></material>
   <material name="silver"><color rgba="0.75 0.75 0.75 1.0"/></material>
-  <material name="blue"><color rgba="0.0 0.0 0.8 1.0"/></material>
-  <material name="red"><color rgba="1.0 0.0 0.0 1.0"/></material>
+  <material name="blue"><color rgba="0.01 0.52 0.78 1.0"/></material>
+  <material name="skyblue"><color rgba="0.01 0.52 0.78 1.0"/></material>
+  <material name="red"><color rgba="0.51 0.11 0.17 1.0"/></material>
+  <material name="crimson"><color rgba="0.51 0.11 0.17 1.0"/></material>
 
   <link name="base_link">
     <visual>
@@ -20,7 +23,7 @@
       <geometry>
         <box size="0.465 0.355 0.200"/> 
       </geometry>
-      <material name="red"/>
+      <material name="crimson"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.100" rpy="0 0 0"/>
@@ -90,7 +93,7 @@
   <link name="rear_left_wheel">
     <visual>
       <geometry><cylinder radius="0.065" length="0.05"/></geometry>
-      <material name="silver"/>
+      <material name="skyblue"/>
     </visual>
     <collision>
       <geometry><cylinder radius="0.065" length="0.05"/></geometry>
@@ -107,14 +110,14 @@
     <axis xyz="0 0 1"/>
   </joint>
   <gazebo reference="rear_left_wheel">
-    <material>Gazebo/Silver</material>
+    <material>Gazebo/Blue</material>
     <mu1>1.0</mu1><mu2>0.05</mu2><fdir1>1 0 0</fdir1> 
   </gazebo>
 
   <link name="rear_right_wheel">
     <visual>
       <geometry><cylinder radius="0.065" length="0.05"/></geometry>
-      <material name="silver"/>
+      <material name="skyblue"/>
     </visual>
     <collision>
       <geometry><cylinder radius="0.065" length="0.05"/></geometry>
@@ -131,7 +134,7 @@
     <axis xyz="0 0 1"/>
   </joint>
   <gazebo reference="rear_right_wheel">
-    <material>Gazebo/Silver</material>
+    <material>Gazebo/Blue</material>
     <mu1>1.0</mu1><mu2>0.05</mu2><fdir1>1 0 0</fdir1> 
   </gazebo>
 
@@ -246,11 +249,11 @@
   </gazebo>
 
   <gazebo reference="lidar_link">
-    <sensor type="gpu_lidar" name="lidar_sensor">
+    <sensor type="lidar" name="lidar_sensor">
       <update_rate>10.0</update_rate>
-      <topic>scan</topic>
+      <topic>/scan</topic>
       <gz_frame_id>lidar_link</gz_frame_id>
-      <ray>
+      <lidar>
         <scan>
           <horizontal>
             <samples>360</samples>
@@ -263,7 +266,7 @@
           <min>0.35</min>
           <max>10.0</max>
         </range>
-      </ray>
+      </lidar>
       <always_on>true</always_on>
       <visualize>true</visualize>
     </sensor>

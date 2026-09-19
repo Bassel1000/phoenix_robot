@@ -31,14 +31,27 @@ def generate_launch_description():
             'use_sim_time': False
         }]
     )
-    static_odom_node = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_odom_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_footprint']
+
+    # 3. Planar Laser Odometry (rf2o) for physical robot base_footprint tracking
+    rf2o_laser_odometry_node = Node(
+        package='rf2o_laser_odometry',
+        executable='rf2o_laser_odometry_node',
+        name='rf2o_laser_odometry',
+        output='screen',
+        parameters=[{
+            'laser_scan_topic': '/scan',
+            'odom_topic': '/odom',
+            'publish_tf': True,
+            'base_frame_id': 'base_footprint',
+            'odom_frame_id': 'odom',
+            'init_pose_from_topic': '',
+            'freq': 20.0,
+            'verbose': False
+        }]
     )
 
     return LaunchDescription([
         robot_state_publisher_node,
-        joint_state_publisher_node
+        joint_state_publisher_node,
+        rf2o_laser_odometry_node
     ])

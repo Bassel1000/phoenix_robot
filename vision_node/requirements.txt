@@ -2,14 +2,23 @@
 opencv-contrib-python
 numpy
 
-# PyTorch Object Detection (For Custom MiniYOLO fire detection)
+# PyTorch Object Detection (For Custom Flame Detection CNN)
 torch
 torchvision
+
+# Keras / TensorFlow (For Human and Fall Detection)
+tensorflow
+
+# Advanced Model Inference
+ultralytics
+
+# Web Streaming & Telemetry
+flask
+flask_cors
+python-dotenv
+paho-mqtt
 
 # Model Training & Visualization (Used in Jupyter Notebook)
 albumentations
 tqdm
 matplotlib
-
-# MQTT Communication (To send coordinates to the Raspberry Pi)
-paho-mqtt

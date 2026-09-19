@@ -38,12 +38,17 @@ flowchart LR
 
 The interface employs a high-contrast dark sci-fi aesthetic engineered for situational awareness in field conditions:
 
-* **Color Palette:**
+* **Color Palette (Cybernetic Ember & Steel):**
+  - `Chassis Crimson (--brand-crimson)`: `#821C2C` (physical chassis primary, topbar accents).
+  - `Accent Sky-Blue (--accent-sky-blue)`: `#0284C7` (wheel rims, telemetry info highlights).
   - `Fire Accent (--fire)`: `#ff4f1a` (flame alerts, water suppression indicators).
+  - `Fire Glow Gradient`: `#FDE047` $\to$ `#FB923C` $\to$ `#F97316` $\to$ `#EF4444`.
   - `OK / Ready (--ok)`: `#00e5a0` (system nominal, connected, target reached).
   - `Warning (--warn)`: `#ffb340` (navigation active, obstacle proximity).
   - `Danger (--danger)`: `#ff2d2d` (emergency stop, casualty detected).
   - `Life Accent (--human)`: `#c084fc` (human & fall detection markers).
+  - `Obsidian Dark (--bg-obsidian)`: `#0D0F17` (deep tactical background).
+* **Branding:** Glowing animated Phoenix Fire Logo (`phoenixFlameGlow` keyframe animation).
 * **Typography:** `Share Tech Mono` for numerical coordinates and telemetry gauges; `Barlow` / `Barlow Condensed` for tactical headings.
 * **Audio Feedback:** Real-time synthesized audio feedback for button interactions, fire alerts, and connection state transitions.
 
@@ -73,9 +78,8 @@ The interface employs a high-contrast dark sci-fi aesthetic engineered for situa
 
 1. Open `Phoenix_Web_Command_Center/index.html` in Chrome, Firefox, Safari, or Edge.
 2. Navigate to the **⚙ Settings** tab on the dashboard.
-3. Enter the WebSocket URI for your Raspberry Pi:
-   ```
-   ws://192.168.1.XX:9001/mqtt
-   ```
+3. Select your target environment preset:
+   - **Local Sim (9001):** Sets `ws://localhost:9001/mqtt` for Gazebo Harmonic simulation testing.
+   - **Robot Pi (Live):** Sets `ws://<PI_IP>:9001/mqtt` for the physical robot over Wi-Fi.
 4. Click **⚡ CONNECT TO BROKER**. The connection pill will glow green (`ONLINE`).
 5. Open `logs.html` anytime to review full chronological operational event timestamps.

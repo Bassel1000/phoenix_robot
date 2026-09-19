@@ -26,6 +26,7 @@ install(DIRECTORY
   urdf
   launch
   config
+  models
   DESTINATION share/${PROJECT_NAME}
 )
 

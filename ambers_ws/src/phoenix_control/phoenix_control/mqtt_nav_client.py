@@ -74,9 +74,10 @@ class MqttNavClient(Node):
                     self.pump_trigger.publish(msg_out)
                 return
             
-            # Expecting JSON payload: {"x": 2.5, "y": 1.2, "yaw": 0.5}
+            # Coordinates are map-frame positions unless a different frame is explicit.
             target_x = float(data.get("x", 0.0))
             target_y = float(data.get("y", 0.0))
+            target_frame = str(data.get("frame_id", "map"))
             
             # If moving purely backwards, default yaw to 0.0 to reverse without turning around.
             # Otherwise, point the yaw towards the destination.
@@ -97,22 +98,22 @@ class MqttNavClient(Node):
                     self.get_logger().info(f"New goal is close to active goal (diff: {distance:.3f}m). Ignoring to prevent preemption.")
                     return
             
-            self.send_nav_goal(target_x, target_y, target_yaw)
+            self.send_nav_goal(target_x, target_y, target_yaw, target_frame)
         except Exception as e:
             self.get_logger().error(f"Failed to parse MQTT message: {e}")
 
-    def send_nav_goal(self, x, y, yaw):
-        self.get_logger().info(f"Sending Nav2 goal: x={x}, y={y}, yaw={yaw}")
+    def send_nav_goal(self, x, y, yaw, frame_id):
+        self.get_logger().info(
+            f"Sending Nav2 goal: x={x}, y={y}, yaw={yaw}, frame={frame_id}"
+        )
         self.nav_client.wait_for_server()
         
         # Track the active target coordinates
         self.active_goal_x = x
         self.active_goal_y = y
         
-        # Create the pose directly in the base_footprint frame. 
-        # Nav2's action server will automatically handle the TF transform to the global map frame.
         goal_msg = NavigateToPose.Goal()
-        goal_msg.pose.header.frame_id = 'base_footprint'
+        goal_msg.pose.header.frame_id = frame_id
         goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
         goal_msg.pose.pose.position.x = float(x)
         goal_msg.pose.pose.position.y = float(y)
@@ -122,15 +123,29 @@ class MqttNavClient(Node):
         self._send_goal_future = self.nav_client.send_goal_async(goal_msg)
         self._send_goal_future.add_done_callback(self.goal_response_callback)
 
+    def publish_status(self, state, extra=None):
+        payload = {"status": state}
+        if extra:
+            payload.update(extra)
+        try:
+            msg_str = json.dumps(payload)
+            self.mqtt_client.publish("phoenix/status", msg_str)
+            self.mqtt_client.publish("ambers/robot/status", msg_str)
+            self.get_logger().info(f"Published status to MQTT: {msg_str}")
+        except Exception as e:
+            self.get_logger().warn(f"Failed to publish status: {e}")
+
     def goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().info('Nav2 Goal rejected.')
+            self.publish_status("REJECTED")
             # Clear active goal tracker
             self.active_goal_x = None
             self.active_goal_y = None
             return
         self.get_logger().info('Nav2 Goal accepted, navigating...')
+        self.publish_status("NAVIGATING", {"x": self.active_goal_x, "y": self.active_goal_y})
         self.current_goal_handle = goal_handle
         self._get_result_future = goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
@@ -144,12 +159,14 @@ class MqttNavClient(Node):
         self.current_goal_handle = None
         
         if result == 4: # 4 corresponds to SUCCEEDED
-            self.get_logger().info('Navigation Succeeded! (Automatic pump trigger is now disabled for safety)')
-            # msg = Bool()
-            # msg.data = True
-            # self.pump_trigger.publish(msg)
+            self.get_logger().info('Navigation Succeeded! Standoff target reached.')
+            self.publish_status("SUCCEEDED", {"reached": True})
+            msg = Bool()
+            msg.data = True
+            self.pump_trigger.publish(msg)
         else:
             self.get_logger().info(f'Navigation failed with status: {result}')
+            self.publish_status(f"FAILED", {"status_code": result})
 
 def main(args=None):
     rclpy.init(args=args)

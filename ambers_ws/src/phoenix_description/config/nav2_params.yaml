@@ -75,7 +75,7 @@ controller_server:
     controller_frequency: 10.0
     costmap_update_timeout: 0.30
     min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
+    min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugins: ["progress_checker"]
@@ -97,25 +97,25 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.30
-      yaw_goal_tolerance: 0.40
+      xy_goal_tolerance: 0.15
+      yaw_goal_tolerance: 0.25
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
       time_steps: 15
       model_dt: 0.1
-      batch_size: 60
+      batch_size: 30
       ax_max: 1.0        # Smoother forward acceleration to prevent jerking and LiDAR blur
       ax_min: -1.0       # Smoother braking
-      ay_max: 3.0
-      ay_min: -3.0
-      az_max: 2.5        # Smoother turning acceleration
+      ay_max: 0.0
+      ay_min: 0.0
+      az_max: 1.5        # Limit turning acceleration for skid-steer simulation
       vx_std: 0.1
       vy_std: 0.1
       wz_std: 0.3
-      vx_max: 0.2        # Forward speed
-      vx_min: -0.15      # Reverse speed (slower than forward)
-      vy_max: 0.5
-      wz_max: 2.0        # Increase rotation speed to overcome friction
+      vx_max: 0.35       # Forward speed for simulation and conservative hardware testing
+      vx_min: 0.0        # Prevent forward/reverse oscillation for navigation
+      vy_max: 0.0        # DiffDrive has no lateral velocity
+      wz_max: 1.0
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 2.0
@@ -229,16 +229,14 @@ global_costmap:
     ros__parameters:
       update_frequency: 1.0
       publish_frequency: 1.0
-      global_frame: odom
+      global_frame: map
       robot_base_frame: base_footprint
-      robot_radius: 0.22
+      footprint: "[[0.2325, 0.1775], [0.2325, -0.1775], [-0.2325, -0.1775], [-0.2325, 0.1775]]"
       resolution: 0.05
       track_unknown_space: true
       transform_tolerance: 2.0
-      rolling_window: true
-      width: 10
-      height: 10
-      plugins: ["obstacle_layer", "inflation_layer"]
+      rolling_window: false
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -363,10 +361,10 @@ velocity_smoother:
     stamp_smoothed_velocity_with_smoothing_time: False
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.3, 0.0, 2.0]     # <--- Increased rotational max speed
-    min_velocity: [-0.3, 0.0, -2.0]   
-    max_accel: [1.5, 0.0, 2.5]        # <--- Increased rotational acceleration
-    max_decel: [-1.5, 0.0, -2.5]      
+    max_velocity: [0.4, 0.0, 1.0]
+    min_velocity: [0.0, 0.0, -1.0]
+    max_accel: [1.0, 0.0, 1.5]
+    max_decel: [-1.0, 0.0, -1.5]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

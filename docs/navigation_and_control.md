@@ -58,11 +58,16 @@ flowchart TD
 
 ## 🗺️ Real-Time SLAM & Odometry Pipeline
 
-### 1. `rf2o_laser_odometry` (Planar Laser Odometry)
-Traditional wheel encoders in 4-wheel skid-steer robots suffer from substantial odometric drift caused by wheel slippage and lateral friction during turns. Phoenix solves this by employing **RF2O (Range Flow-based 2D Odometry)**:
-* **Principle:** Estimates robot planar motion by analyzing consecutive 2D laser scans from the Okdo LD06 LiDAR using the range flow constraint equation.
-* **Benefits:** 100% immune to wheel spin, wheel slip, carpet drag, or battery-induced torque fluctuations.
-* **Output:** Publishes continuous `/odom` telemetry and broadcasts the real-time dynamic transform `odom` $\rightarrow$ `base_footprint`.
+### 1. Odometry Duality & TF Stability
+Traditional wheel encoders or open-loop dead reckoning in 4-wheel skid-steer robots suffer from 40–70% odometric drift caused by lateral wheel slippage during turns. Phoenix solves this through clean architectural separation:
+
+* **On Physical Hardware:**
+  - `laser_odom.launch.py` runs **RF2O (Range Flow-based 2D Odometry)** from LiDAR `/scan`.
+  - Publishes `/odom` and broadcasts dynamic TF `odom` $\rightarrow$ `base_footprint`.
+  - In `motor_controller.py`, `publish_odom_tf` is set to `False` (default), completely eliminating TF fighting and map distortion.
+* **In Gazebo Harmonic Simulation:**
+  - The Gazebo `DiffDrive` system plugin simulates physics-based wheel contact and publishes `/odom`.
+  - The [`simulation_odom_tf`](file:///d:/Phoenix/ambers_ws/src/phoenix_control/phoenix_control/simulation_odom_tf.py) node listens to `/odom` and broadcasts dynamic TF `odom` $\rightarrow$ `base_footprint` with simulation timestamp sync.
 
 ### 2. SLAM Toolbox (Online Asynchronous Mapping)
 * **Mode:** `online_async_launch.py` configured via `mapper_params_online_async.yaml`.
@@ -73,16 +78,19 @@ Traditional wheel encoders in 4-wheel skid-steer robots suffer from substantial 
 
 ## 🎯 Nav2 Path Planning & Action Client
 
-### 1. `mqtt_nav_client` Action Bridge
-The `mqtt_nav_client` node bridges MQTT target coordinates to the ROS 2 Action Server:
-1. Receives `{ "x": float, "y": float }` from `ambers/robot/navigation/target`.
-2. Converts the coordinate into a `geometry_msgs/msg/PoseStamped` goal frame in the `map` coordinate frame.
-3. Dispatches the goal to the Nav2 `NavigateToPose` action server.
-4. Monitors path progress and reports status back to `ambers/robot/status`.
+### 1. `TimerAction` Startup Synchronization
+Launching Nav2 simultaneously with SLAM Toolbox causes global costmap initialization failures because the TF chain `map` $\rightarrow$ `odom` $\rightarrow$ `base_footprint` is not yet connected at $t=0$. Both [simulation.launch.py](file:///d:/Phoenix/ambers_ws/src/phoenix_description/launch/simulation.launch.py) (20s delay) and [phoenix_bringup.launch.py](file:///d:/Phoenix/ambers_ws/src/phoenix_description/launch/phoenix_bringup.launch.py) (15s delay) wrap `nav2_launch` inside a `TimerAction` to ensure 100% reliable costmap initialization.
 
-### 2. Stand-Off Distance & Safe Arrival Logic
+### 2. `mqtt_nav_client` Action Bridge
+The `mqtt_nav_client` node bridges MQTT target coordinates to the ROS 2 Action Server:
+1. Receives `{ "x": float, "y": float, "frame_id": "map" }` from `ambers/robot/navigation/target`.
+2. Calculates heading orientation towards the hazard and formats a `geometry_msgs/msg/PoseStamped` goal.
+3. Dispatches the goal to the Nav2 `NavigateToPose` action server.
+4. Broadcasts live navigation status (`NAVIGATING`, `SUCCEEDED`, `REJECTED`, `FAILED`) to `phoenix/status` and `ambers/robot/status`.
+
+### 3. Stand-Off Distance & Safe Arrival Logic
 * To prevent the robot from colliding with the fire source or exposing its chassis to high radiant heat, the goal waypoint is calculated with a **0.30 m (30 cm) standoff offset**.
-* Once the action server reports `STATUS_SUCCEEDED`, navigation locks, and the operator is prompted on the Web Command Center to initiate manual or semi-automated suppression.
+* Once the action server reports `STATUS_SUCCEEDED`, navigation locks, `target_reached` is triggered, and the water suppression spray activates automatically or on manual command.
 
 ---
 

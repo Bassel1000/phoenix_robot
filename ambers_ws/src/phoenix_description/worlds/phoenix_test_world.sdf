@@ -1,0 +1,78 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="phoenix_test_world">
+    <gravity>0 0 -9.81</gravity>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.5 -1</direction>
+    </light>
+
+    <model name="floor">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.45 0.45 0.45 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="north_wall">
+      <static>true</static>
+      <pose>0 4 0.5 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>8 0.1 1</size></box></geometry></collision><visual name="visual"><geometry><box><size>8 0.1 1</size></box></geometry></visual></link>
+    </model>
+    <model name="south_wall">
+      <static>true</static>
+      <pose>0 -4 0.5 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>8 0.1 1</size></box></geometry></collision><visual name="visual"><geometry><box><size>8 0.1 1</size></box></geometry></visual></link>
+    </model>
+    <model name="east_wall">
+      <static>true</static>
+      <pose>4 0 0.5 0 0 1.5708</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>8 0.1 1</size></box></geometry></collision><visual name="visual"><geometry><box><size>8 0.1 1</size></box></geometry></visual></link>
+    </model>
+    <model name="west_wall">
+      <static>true</static>
+      <pose>-4 0 0.5 0 0 1.5708</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>8 0.1 1</size></box></geometry></collision><visual name="visual"><geometry><box><size>8 0.1 1</size></box></geometry></visual></link>
+    </model>
+
+    <model name="test_obstacle">
+      <static>true</static>
+      <pose>1.5 0 0.4 0 0 0</pose>
+      <link name="link"><collision name="collision"><geometry><box><size>0.8 1.5 0.8</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.8 1.5 0.8</size></box></geometry></visual></link>
+    </model>
+
+    <model name="fire_target">
+      <static>true</static>
+      <pose>2.5 2.0 0.2 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.15</radius><length>0.4</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.15</radius><length>0.4</length></cylinder></geometry>
+          <material>
+            <ambient>1.0 0.31 0.0 1.0</ambient>
+            <diffuse>1.0 0.31 0.0 1.0</diffuse>
+            <emissive>0.8 0.2 0.0 1.0</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>
