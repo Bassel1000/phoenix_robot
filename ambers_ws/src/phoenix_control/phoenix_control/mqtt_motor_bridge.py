@@ -13,9 +13,9 @@ class MqttMotorBridge(Node):
         # Publisher for motor commands
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         
-        # Speed configuration (parameterized for simulation and hardware)
-        self.declare_parameter('linear_speed', 0.35)
-        self.declare_parameter('angular_speed', 0.8)
+        # Speed configuration (parameterized for agile teleoperation)
+        self.declare_parameter('linear_speed', 0.60)
+        self.declare_parameter('angular_speed', 1.6)
         self.linear_speed = float(self.get_parameter('linear_speed').value)
         self.angular_speed = float(self.get_parameter('angular_speed').value)
         

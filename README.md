@@ -148,6 +148,13 @@ ros2 launch phoenix_description phoenix_bringup.launch.py
 The repository includes a complete Gazebo Harmonic simulation environment with full Web Command Center and MQTT integration:
 
 ```bash
+# 1. Install prerequisites & CycloneDDS (recommended for WSL2/Linux inter-process DDS)
+sudo apt update
+sudo apt install -y python3-paho-mqtt python3-gpiozero ros-jazzy-rmw-cyclonedds-cpp mosquitto mosquitto-clients
+echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.bashrc
+source ~/.bashrc
+
+# 2. Build and launch simulation stack
 source /opt/ros/$ROS_DISTRO/setup.bash
 cd ambers_ws
 colcon build --symlink-install
@@ -158,8 +165,9 @@ ros2 launch phoenix_description simulation.launch.py
 * **Fully Integrated:** Bridges LiDAR (`/scan`), odometry (`/odom`), driving (`/cmd_vel`), camera (`/camera/image_raw`), and clock (`/clock`).
 * **Web HUD Ready:** Automatically launches MQTT control bridges (`mqtt_nav_client`, `mqtt_motor_bridge`, `pump_controller`, `nozzle_controller`) with simulation time enabled (`use_sim_time:=True`).
 * **Visual Fire Target:** The test arena includes an emissive flame target cylinder at `(2.5, 2.0, 0.2)`.
+* **20-Second Nav2 Stabilization:** Nav2 automatically launches 20 seconds after Gazebo to let SLAM Toolbox stabilize the `map -> odom` transform before costmaps activate.
 
-In a second terminal, after sourcing the workspace, dispatch a map-frame goal:
+In a second terminal, after sourcing the workspace, dispatch a map-frame goal (or use the Web Command Center D-Pad / Goal sender):
 
 ```bash
 ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
@@ -175,6 +183,8 @@ ros2 topic hz /camera/image_raw
 ros2 run tf2_tools view_frames
 ros2 topic echo /map --once
 ```
+
+> 📖 *For detailed step-by-step guidance including Mosquitto WebSocket setup and manual D-Pad driving instructions, see [phoenix_run_guide.md](phoenix_run_guide.md).*
 
 ### 3. Launch AI Vision Engine (Laptop / Workstation)
 ```bash

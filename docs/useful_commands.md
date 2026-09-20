@@ -92,7 +92,28 @@ mosquitto_pub -h localhost -p 1883 -t "phoenix/cmd/water" -m "ON"
 mosquitto_pub -h localhost -p 1883 -t "phoenix/cmd/water" -m "OFF"
 ```
 
-Dispatch autonomous navigation target:
+Dispatch autonomous navigation target directly to fire standoff location:
 ```bash
-mosquitto_pub -h localhost -p 1883 -t "ambers/robot/navigation/target" -m '{"x": 2.0, "y": 1.5, "frame_id": "map"}'
+mosquitto_pub -h localhost -p 1883 -t "ambers/robot/navigation/target" -m '{"x": 2.2, "y": 1.8, "frame_id": "map"}'
+```
+
+## RViz2 3D Visualization & Goal Tools
+
+Launch RViz2 with the Phoenix cybernetic profile:
+```bash
+source /opt/ros/jazzy/setup.bash
+cd ambers_ws
+source install/setup.bash
+ros2 run rviz2 rviz2 -d $(ros2 pkg prefix phoenix_description)/share/phoenix_description/config/phoenix_sim.rviz
+```
+* Or launch simulation with RViz enabled automatically:
+```bash
+ros2 launch phoenix_description simulation.launch.py rviz:=true
+```
+
+## Simulation Process Hygiene (Clearing Background Instances)
+To ensure no orphaned headless Gazebo or ROS processes accumulate in WSL2:
+```bash
+killall -9 gz-sim-server gz ruby 2>/dev/null
+ros2 daemon stop && ros2 daemon start
 ```

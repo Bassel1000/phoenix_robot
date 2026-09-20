@@ -68,7 +68,9 @@ The interface employs a high-contrast dark sci-fi aesthetic engineered for situa
 
 ### 3. Mission Control & Actuator Interface
 * **Mode Switcher:** Instant toggling between `AUTONOMOUS` mode (Nav2 AI navigation) and `MANUAL` mode (Operator override).
-* **Drive Controls:** Dual-mode manual locomotion using a virtual analog joystick or a 4-way tactical D-Pad.
+* **Interactive Tactical Arena Map:** An embedded 2D vector canvas displaying the $8\text{ m} \times 8\text{ m}$ arena bounds, central obstacle, and fire cylinder. Clicking anywhere on the canvas instantly drops a green waypoint pin and dispatches Nav2 to that location.
+* **Navigation Presets:** One-click waypoint target presets (`🔥 Fire (2.2, 1.8)`, `🛡 Flank (0.8, 1.5)`, `🏠 Origin (0.0, 0.0)`).
+* **Heartbeat D-Pad Teleoperation:** Pointer-driven 4-way tactile D-Pad that continuously transmits 150ms heartbeat velocity pulses while held down and stops immediately on release.
 * **Gimbal Directional Pad:** 4-axis panning/tilting controls with speed tuning and single-click `CENTER` alignment.
 * **Suppression Cannon Trigger:** Tactile hold-to-spray fire button with visual pulse animation, automatically sending `ON` on press and `OFF` on release.
 

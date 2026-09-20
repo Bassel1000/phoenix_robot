@@ -2,8 +2,14 @@
 # Optimized according to the Phoenix Robot Wiring & GPIO Reference Table
 import rclpy
 from rclpy.node import Node
-from gpiozero import Servo
-from gpiozero.pins.pigpio import PiGPIOFactory
+try:
+    from gpiozero import ContinuousServo, Servo
+    from gpiozero.pins.pigpio import PiGPIOFactory
+except (ImportError, Exception):
+    ContinuousServo = None
+    Servo = None
+    PiGPIOFactory = None
+
 import paho.mqtt.client as mqtt
 
 class NozzleController(Node):
@@ -12,11 +18,13 @@ class NozzleController(Node):
         self.get_logger().info("Initializing Phoenix Nozzle Controller (Manual Mode)...")
         
         # --- Hardware Factory Configuration ---
-        try:
-            self.pin_factory = PiGPIOFactory()
-        except Exception:
-            self.get_logger().warn("pigpio daemon not running! Falling back to software PWM.")
-            self.pin_factory = None
+        self.pin_factory = None
+        if PiGPIOFactory is not None:
+            try:
+                self.pin_factory = PiGPIOFactory()
+            except Exception:
+                self.get_logger().warn("pigpio daemon not running! Falling back to software PWM.")
+                self.pin_factory = None
         
         # --- Actuator Allocation ---
         self.pan_servo = None

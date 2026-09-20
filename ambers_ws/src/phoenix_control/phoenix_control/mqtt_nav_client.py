@@ -79,13 +79,17 @@ class MqttNavClient(Node):
             target_y = float(data.get("y", 0.0))
             target_frame = str(data.get("frame_id", "map"))
             
-            # If moving purely backwards, default yaw to 0.0 to reverse without turning around.
-            # Otherwise, point the yaw towards the destination.
-            if target_x < 0 and target_y == 0:
-                default_yaw = 0.0
+            # If explicit yaw is provided, use it directly.
+            # If navigating near the fire hazard (2.5, 2.0), calculate orientation pointing nozzle straight at flame.
+            if "yaw" in data and data["yaw"] is not None:
+                target_yaw = float(data["yaw"])
+            elif math.hypot(2.5 - target_x, 2.0 - target_y) < 1.5:
+                # Stand-off facing fire cylinder at (2.5, 2.0)
+                target_yaw = math.atan2(2.0 - target_y, 2.5 - target_x)
+            elif target_x < 0 and target_y == 0:
+                target_yaw = 0.0
             else:
-                default_yaw = math.atan2(target_y, target_x)
-            target_yaw = float(data.get("yaw", default_yaw))
+                target_yaw = math.atan2(target_y, target_x)
             
             # Check if this goal is already being executed
             if self.active_goal_x is not None and self.active_goal_y is not None:
@@ -106,7 +110,10 @@ class MqttNavClient(Node):
         self.get_logger().info(
             f"Sending Nav2 goal: x={x}, y={y}, yaw={yaw}, frame={frame_id}"
         )
-        self.nav_client.wait_for_server()
+        if not self.nav_client.wait_for_server(timeout_sec=4.0):
+            self.get_logger().warn("Nav2 action server not yet ready! (Waiting for Nav2 bringup)")
+            self.publish_status("NAV2_INITIALIZING", {"message": "Nav2 is still initializing. Please retry in a few seconds."})
+            return
         
         # Track the active target coordinates
         self.active_goal_x = x
@@ -178,7 +185,8 @@ def main(args=None):
     finally:
         node.mqtt_client.loop_stop()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

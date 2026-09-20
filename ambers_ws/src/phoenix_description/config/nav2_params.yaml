@@ -97,25 +97,25 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.10
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
-      time_steps: 15
+      time_steps: 25
       model_dt: 0.1
-      batch_size: 30
-      ax_max: 1.0        # Smoother forward acceleration to prevent jerking and LiDAR blur
-      ax_min: -1.0       # Smoother braking
+      batch_size: 60
+      ax_max: 2.0        # Rapid sprint acceleration for emergency response
+      ax_min: -2.0       # Responsive emergency braking
       ay_max: 0.0
       ay_min: 0.0
-      az_max: 1.5        # Limit turning acceleration for skid-steer simulation
-      vx_std: 0.1
+      az_max: 3.0        # Agile turning acceleration
+      vx_std: 0.15
       vy_std: 0.1
-      wz_std: 0.3
-      vx_max: 0.35       # Forward speed for simulation and conservative hardware testing
-      vx_min: 0.0        # Prevent forward/reverse oscillation for navigation
+      wz_std: 0.35
+      vx_max: 0.80       # Tactical fire response cruising speed (up from 0.35 m/s)
+      vx_min: 0.0        # Prevent reverse oscillation during navigation
       vy_max: 0.0        # DiffDrive has no lateral velocity
-      wz_max: 1.0
+      wz_max: 2.2        # Fast turn rate (rotates 180 deg in ~1.4s)
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 2.0
@@ -150,7 +150,7 @@ controller_server:
       PreferForwardCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0
+        cost_weight: 6.0
         threshold_to_consider: 0.5
       CostCritic:
         enabled: true
@@ -165,7 +165,7 @@ controller_server:
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 14.0
+        cost_weight: 8.0
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 4
         threshold_to_consider: 0.5
@@ -193,21 +193,21 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 5.0
-      publish_frequency: 2.0
+      update_frequency: 10.0
+      publish_frequency: 5.0
       global_frame: odom
       robot_base_frame: base_footprint
       rolling_window: true
-      width: 6     # <--- INCREASE THIS FROM 3 TO 6
-      height: 6    # <--- INCREASE THIS FROM 3 TO 6
+      width: 6
+      height: 6
       resolution: 0.05
       robot_radius: 0.22
       transform_tolerance: 2.0
       plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.25
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.35
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -218,9 +218,9 @@ local_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
+          raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 5.0
           obstacle_min_range: 0.0
       always_send_full_costmap: True
 
@@ -247,17 +247,17 @@ global_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
+          raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 5.0
           obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.25
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.35
       always_send_full_costmap: True
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.
@@ -282,7 +282,7 @@ planner_server:
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
       tolerance: 0.5
-      use_astar: false
+      use_astar: true
       allow_unknown: true
 
 smoother_server:
@@ -361,10 +361,10 @@ velocity_smoother:
     stamp_smoothed_velocity_with_smoothing_time: False
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.4, 0.0, 1.0]
-    min_velocity: [0.0, 0.0, -1.0]
-    max_accel: [1.0, 0.0, 1.5]
-    max_decel: [-1.0, 0.0, -1.5]
+    max_velocity: [0.85, 0.0, 2.4]
+    min_velocity: [0.0, 0.0, -2.4]
+    max_accel: [2.0, 0.0, 3.2]
+    max_decel: [-2.0, 0.0, -3.2]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

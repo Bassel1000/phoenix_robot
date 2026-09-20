@@ -92,6 +92,12 @@ The `mqtt_nav_client` node bridges MQTT target coordinates to the ROS 2 Action S
 * To prevent the robot from colliding with the fire source or exposing its chassis to high radiant heat, the goal waypoint is calculated with a **0.30 m (30 cm) standoff offset**.
 * Once the action server reports `STATUS_SUCCEEDED`, navigation locks, `target_reached` is triggered, and the water suppression spray activates automatically or on manual command.
 
+### 4. Multi-Channel Waypoint Dispatch
+Waypoints can be dispatched to Nav2 through three synchronized interfaces:
+1. **Interactive Web Minimap & Presets:** Click-to-navigate on the Web Command Center 2D arena canvas, sending JSON payloads to `ambers/robot/navigation/target`.
+2. **RViz2 3D "2D Goal Pose" Tool:** Point-and-click directly in 3D on the SLAM occupancy grid (`/goal_pose`).
+3. **ROS 2 Action CLI:** Direct terminal dispatch via `ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose`.
+
 ---
 
 ## ⚡ Motor Controller & Kinematics Engine

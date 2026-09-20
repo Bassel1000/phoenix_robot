@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -22,12 +22,20 @@ def generate_launch_description():
     slam_params = os.path.join(
         description_share, "config", "mapper_params_online_async.yaml"
     )
+    rviz_config = os.path.join(description_share, "config", "phoenix_sim.rviz")
 
     launch_mqtt = LaunchConfiguration("launch_mqtt")
     declare_launch_mqtt = DeclareLaunchArgument(
         "launch_mqtt",
         default_value="true",
         description="Whether to launch MQTT bridge and control nodes for Web Command Center integration",
+    )
+
+    launch_rviz = LaunchConfiguration("rviz")
+    declare_launch_rviz = DeclareLaunchArgument(
+        "rviz",
+        default_value="false",
+        description="Whether to launch RViz2 for LiDAR, SLAM, and robot visualization",
     )
 
     with open(urdf_file, "r", encoding="utf-8") as robot_file:
@@ -132,13 +140,28 @@ def generate_launch_description():
         condition=IfCondition(launch_mqtt),
     )
 
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        arguments=["-d", rviz_config],
+        parameters=[{"use_sim_time": True}],
+        output="screen",
+        condition=IfCondition(launch_rviz),
+    )
+
     # Give Gazebo, the bridge, and SLAM time to establish map -> odom before
     # Nav2 activates its global costmap.
-    delayed_nav2 = TimerAction(period=20.0, actions=[nav2])
+    delayed_nav2 = TimerAction(period=8.0, actions=[nav2])
+
+    set_rmw = SetEnvironmentVariable(
+        name="RMW_IMPLEMENTATION", value="rmw_cyclonedds_cpp"
+    )
 
     return LaunchDescription(
         [
+            set_rmw,
             declare_launch_mqtt,
+            declare_launch_rviz,
             gazebo,
             robot_state_publisher,
             spawn_robot,
@@ -150,5 +173,6 @@ def generate_launch_description():
             mqtt_motor,
             pump,
             nozzle,
+            rviz_node,
         ]
     )

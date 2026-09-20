@@ -13,8 +13,8 @@ slam_toolbox:
     mode: mapping # Dynamic mapping
     message_queue_size: 50
 
-    # Performance optimizations for Raspberry Pi 4
-    map_update_interval: 5.0  # Slow down map updates slightly to save CPU
+    # Performance optimizations: 2.0s update interval for agile navigation
+    map_update_interval: 2.0
     resolution: 0.05
     max_laser_range: 10.0
     minimum_time_interval: 0.1
