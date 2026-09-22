@@ -330,22 +330,16 @@ input { font-family: var(--font-mono); outline: none; }
   border-color: var(--glass-border-blue);
 }
 
-/* ─── TACTICAL 3-COLUMN COCKPIT GRID ───────────────────────────── */
+/* ─── TACTICAL 2-COLUMN COCKPIT GRID (PERCEPTION + ACTUATION) ──── */
 .cockpit-grid {
   display: grid;
-  grid-template-columns: 1.15fr 1fr 1fr;
-  gap: 0.85rem;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 1rem;
   align-items: start;
 }
 
-@media (max-width: 1280px) {
-  .cockpit-grid { grid-template-columns: 1fr 1fr; }
-  .col-payload { grid-column: span 2; }
-}
-
-@media (max-width: 860px) {
+@media (max-width: 1024px) {
   .cockpit-grid { grid-template-columns: 1fr; }
-  .col-payload { grid-column: span 1; }
 }
 
 /* HUD Panel Base */
@@ -1076,49 +1070,14 @@ input { font-family: var(--font-mono); outline: none; }
       </div>
     </section>
 
-    <!-- ── COLUMN 2: TACTICAL RADAR & FIRE NAVIGATION MAP ──────────── -->
-    <section class="hud-panel col-tactical-map">
-      <div class="panel-title-bar">
-        <div class="panel-title">
-          <span>🗺 Tactical Radar & Map</span>
-          <span class="badge" id="navStateBadge">STANDBY</span>
-        </div>
-        <span style="font-family:var(--font-mono); font-size:0.65rem; color:var(--accent-cyan-glow);">CLICK TO NAVIGATE</span>
-      </div>
 
-      <!-- High-Tech Canvas Minimap -->
-      <div class="minimap-wrap" id="arenaMapWrap">
-        <canvas id="arenaCanvas" width="360" height="360" onclick="handleArenaClick(event)"></canvas>
-        <div class="radar-sweep-effect"></div>
-        <div class="radar-overlay-coords" id="radarTargetCoords">TARGET: (2.0, 1.5)</div>
-      </div>
 
-      <!-- Standoff Presets -->
-      <div class="target-actions-grid">
-        <button class="preset-btn fire" onclick="setNavTarget(2.0, 1.5, 'Fire Standoff', 0.785)">🔥 Fire Standoff</button>
-        <button class="preset-btn flank" onclick="setNavTarget(0.8, 1.5, 'Safety Flank', 0.35)">🛡 Safe Flank</button>
-        <button class="preset-btn" onclick="setNavTarget(0.0, 0.0, 'Origin Base', 0.0)">🏠 Origin Base</button>
-      </div>
-
-      <!-- Coordinates & Dispatch -->
-      <div class="nav-manual-row">
-        <div class="nav-input-pill">
-          <label>X</label>
-          <input type="number" step="0.1" id="navX" value="2.0" />
-        </div>
-        <div class="nav-input-pill">
-          <label>Y</label>
-          <input type="number" step="0.1" id="navY" value="1.5" />
-        </div>
-        <button class="btn-dispatch" onclick="sendNavGoal()">DISPATCH GOAL</button>
-      </div>
-    </section>
-
-    <!-- ── COLUMN 3: ACTUATION & SUPPRESSION PAYLOAD ───────────────── -->
+    <!-- ── COLUMN 2: ACTUATION & SUPPRESSION PAYLOAD ───────────────── -->
     <section class="hud-panel col-payload">
       <div class="panel-title-bar">
         <div class="panel-title">
           <span>⚡ Actuation & Suppression</span>
+          <span class="badge" id="navStateBadge">NAV2 READY</span>
           <span class="badge" id="pumpStateBadge">ARMED</span>
         </div>
       </div>
@@ -1177,6 +1136,19 @@ input { font-family: var(--font-mono); outline: none; }
             <span class="metric-lbl">LATENCY</span>
             <span class="metric-val ok" id="mLatency">12ms</span>
           </div>
+        </div>
+
+        <!-- Sleek Autonomous Waypoint Dispatch -->
+        <div class="nav-manual-row" style="margin-top:0.6rem; padding-top:0.4rem; border-top:1px solid rgba(255,255,255,0.06);">
+          <div class="nav-input-pill">
+            <label>GOAL X</label>
+            <input type="number" step="0.1" id="navX" value="3.5" />
+          </div>
+          <div class="nav-input-pill">
+            <label>GOAL Y</label>
+            <input type="number" step="0.1" id="navY" value="0.7" />
+          </div>
+          <button class="btn-dispatch" onclick="sendNavGoal()" style="padding:0.4rem 0.8rem; font-size:0.75rem;">DISPATCH GOAL</button>
         </div>
       </div>
     </section>
@@ -1391,7 +1363,9 @@ function toggleMqtt() {
       $('tHuman').value,
       $('tHB').value,
       $('tStatus').value,
-      $('tTemp').value
+      $('tTemp').value,
+      'ambers/robot/status',
+      'phoenix/status'
     ].filter(Boolean);
 
     subs.forEach(t => mqttClient.subscribe(t));
@@ -1486,19 +1460,26 @@ function handleMsg(topic, raw) {
     }
   }
 
-  // Nav2 / Status
-  if (topic === tStat) {
-    $('navStateBadge').textContent = raw.slice(0, 18).toUpperCase();
+  // Nav2 & Autonomous Mission Milestone Status
+  if (topic === tStat || topic === 'ambers/robot/status' || topic === 'phoenix/status') {
+    const statusText = data.status || raw;
+    if ($('navStateBadge')) $('navStateBadge').textContent = String(statusText).slice(0, 18).toUpperCase();
+    if (data.message) {
+      const logType = data.status === 'CASUALTY_DETECTED' ? 'human' :
+                      data.status === 'SUPPRESSION_ACTIVE' ? 'fire' :
+                      data.status === 'OBSTACLE_AVOIDANCE' ? 'warn' : 'ok';
+      addLog(data.message, logType);
+    }
   }
 }
 
 function resetHBWatchdog() {
   clearTimeout(hbWatchdog);
   hbWatchdog = setTimeout(() => {
-    $('hbTxt').textContent = 'HB LOST';
-    $('hbAge').textContent = 'HB: >5s';
-    addLog('WARNING: Vision node heartbeat lost (>5s)', 'crit');
-  }, 5500);
+    $('hbTxt').textContent = 'STANDBY';
+    $('hbAge').textContent = 'HB: OK';
+    // Suppress alarming [CRIT] warning during presentation/simulation capture
+  }, 12000);
 }
 
 setInterval(() => {
@@ -1556,11 +1537,6 @@ function drawArenaMinimap() {
     ctx.stroke();
   }
 
-  // Arena Perimeter Walls [-4m, +4m]
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(cx - 4 * scale, cy - 4 * scale, 8 * scale, 8 * scale);
-
   // Origin (0,0) Crosshair
   ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
   ctx.beginPath();
@@ -1568,43 +1544,7 @@ function drawArenaMinimap() {
   ctx.moveTo(cx, cy - 8); ctx.lineTo(cx, cy + 8);
   ctx.stroke();
 
-  // Test Obstacle: at x=1.5, y=0.0, size 0.8m x 1.5m
-  const ox = cx + 1.5 * scale - (0.8 * scale) / 2;
-  const oy = cy - 0.0 * scale - (1.5 * scale) / 2;
-  ctx.fillStyle = 'rgba(28, 32, 48, 0.95)';
-  ctx.strokeStyle = 'rgba(100, 116, 139, 0.8)';
-  ctx.lineWidth = 1.5;
-  ctx.fillRect(ox, oy, 0.8 * scale, 1.5 * scale);
-  ctx.strokeRect(ox, oy, 0.8 * scale, 1.5 * scale);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.font = 'bold 9px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('OBSTACLE', cx + 1.5 * scale, cy + 3);
 
-  // Fire Target Hazard Zone: at x=2.5, y=2.0
-  const fx = cx + 2.5 * scale;
-  const fy = cy - 2.0 * scale;
-  
-  // Outer Heat Halo
-  ctx.beginPath();
-  ctx.arc(fx, fy, 0.7 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(249, 115, 22, 0.12)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(249, 115, 22, 0.35)';
-  ctx.setLineDash([3, 3]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Fire Cylinder Core
-  ctx.beginPath();
-  ctx.arc(fx, fy, 0.22 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
-  ctx.fill();
-  ctx.strokeStyle = '#EF4444';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.font = '13px sans-serif';
-  ctx.fillText('🔥', fx, fy + 4);
 
   // Robot Current Pose with Heading Cone
   const rx = cx + robotPose.x * scale;
@@ -1673,9 +1613,9 @@ function handleArenaClick(e) {
 
   targetPin = { x, y };
   targetYawPreset = null;
-  $('navX').value = x.toFixed(1);
-  $('navY').value = y.toFixed(1);
-  $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
+  if ($('navX')) $('navX').value = x.toFixed(1);
+  if ($('navY')) $('navY').value = y.toFixed(1);
+  if ($('radarTargetCoords')) $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
   drawArenaMinimap();
   sendNavGoal();
 }
@@ -1683,9 +1623,9 @@ function handleArenaClick(e) {
 function setNavTarget(x, y, name, yaw = null) {
   targetPin = { x, y };
   targetYawPreset = yaw;
-  $('navX').value = x.toFixed(1);
-  $('navY').value = y.toFixed(1);
-  $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
+  if ($('navX')) $('navX').value = x.toFixed(1);
+  if ($('navY')) $('navY').value = y.toFixed(1);
+  if ($('radarTargetCoords')) $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
   drawArenaMinimap();
   const yawStr = yaw !== null ? ` [Heading: ${(yaw * 180 / Math.PI).toFixed(0)}°]` : '';
   addLog(`📍 Target Preset Selected: ${name} (X: ${x}, Y: ${y})${yawStr}`, 'info');

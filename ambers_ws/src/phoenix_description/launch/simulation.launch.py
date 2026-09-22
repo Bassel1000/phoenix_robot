@@ -2,21 +2,25 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+    TimerAction,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
+def launch_setup(context, *args, **kwargs):
     description_share = get_package_share_directory("phoenix_description")
     gazebo_share = get_package_share_directory("ros_gz_sim")
     slam_share = get_package_share_directory("slam_toolbox")
     nav2_share = get_package_share_directory("nav2_bringup")
 
-    world_file = os.path.join(description_share, "worlds", "phoenix_test_world.sdf")
-    simulation_model = os.path.join(description_share, "models", "phoenix_sim.sdf")
     urdf_file = os.path.join(description_share, "urdf", "phoenix.urdf")
     nav2_params = os.path.join(description_share, "config", "nav2_params.yaml")
     slam_params = os.path.join(
@@ -24,19 +28,49 @@ def generate_launch_description():
     )
     rviz_config = os.path.join(description_share, "config", "phoenix_sim.rviz")
 
+    world_type_str = context.perform_substitution(
+        LaunchConfiguration("world_type")
+    ).lower()
+    pro_model_str = context.perform_substitution(
+        LaunchConfiguration("pro_model")
+    ).lower()
+    run_demo_str = context.perform_substitution(
+        LaunchConfiguration("run_demo")
+    ).lower()
     launch_mqtt = LaunchConfiguration("launch_mqtt")
-    declare_launch_mqtt = DeclareLaunchArgument(
-        "launch_mqtt",
-        default_value="true",
-        description="Whether to launch MQTT bridge and control nodes for Web Command Center integration",
-    )
-
     launch_rviz = LaunchConfiguration("rviz")
-    declare_launch_rviz = DeclareLaunchArgument(
-        "rviz",
-        default_value="false",
-        description="Whether to launch RViz2 for LiDAR, SLAM, and robot visualization",
-    )
+
+    # Select environment world and spawn pose
+    if world_type_str == "datacenter":
+        world_filename = "phoenix_datacenter_world.sdf"
+        spawn_x = "-0.5"
+        spawn_y = "0.0"
+        spawn_z = "0.05"
+        spawn_yaw = "0.0"
+    elif world_type_str == "warehouse":
+        world_filename = "phoenix_warehouse_world.sdf"
+        spawn_x = "-0.5"
+        spawn_y = "0.0"
+        spawn_z = "0.05"
+        spawn_yaw = "0.0"
+    else:
+        world_filename = "phoenix_test_world.sdf"
+        spawn_x = "0.0"
+        spawn_y = "0.0"
+        spawn_z = "0.05"
+        spawn_yaw = "0.0"
+
+    world_file = os.path.join(description_share, "worlds", world_filename)
+
+    # Select robot visual model
+    if pro_model_str in ["true", "1", "yes"]:
+        simulation_model = os.path.join(
+            description_share, "models", "phoenix_pro_sim.sdf"
+        )
+    else:
+        simulation_model = os.path.join(
+            description_share, "models", "phoenix_sim.sdf"
+        )
 
     with open(urdf_file, "r", encoding="utf-8") as robot_file:
         robot_description = robot_file.read()
@@ -63,6 +97,14 @@ def generate_launch_description():
             simulation_model,
             "-name",
             "phoenix",
+            "-x",
+            spawn_x,
+            "-y",
+            spawn_y,
+            "-z",
+            spawn_z,
+            "-Y",
+            spawn_yaw,
         ],
         output="screen",
     )
@@ -107,7 +149,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    # MQTT Bridge nodes for full Web Command Center and AI vision node integration
     mqtt_nav = Node(
         package="phoenix_control",
         executable="mqtt_nav_client",
@@ -149,30 +190,82 @@ def generate_launch_description():
         condition=IfCondition(launch_rviz),
     )
 
-    # Give Gazebo, the bridge, and SLAM time to establish map -> odom before
-    # Nav2 activates its global costmap.
-    delayed_nav2 = TimerAction(period=8.0, actions=[nav2])
+    # 18-second delay to allow Gazebo, bridge, and SLAM to stabilize
+    delayed_nav2 = TimerAction(period=18.0, actions=[nav2])
 
+    nodes_to_start = [
+        gazebo,
+        robot_state_publisher,
+        spawn_robot,
+        bridge,
+        odom_tf,
+        slam,
+        delayed_nav2,
+        mqtt_nav,
+        mqtt_motor,
+        pump,
+        nozzle,
+        rviz_node,
+    ]
+
+    # Optional automated competition demo director execution
+    if run_demo_str in ["true", "1", "yes"]:
+        demo_node = Node(
+            package="phoenix_control",
+            executable="competition_demo_director",
+            arguments=["--world", world_type_str],
+            parameters=[{"use_sim_time": True}],
+            output="screen",
+        )
+        delayed_demo = TimerAction(period=22.0, actions=[demo_node])
+        nodes_to_start.append(delayed_demo)
+
+    return nodes_to_start
+
+
+def generate_launch_description():
     set_rmw = SetEnvironmentVariable(
         name="RMW_IMPLEMENTATION", value="rmw_cyclonedds_cpp"
+    )
+
+    declare_world_type = DeclareLaunchArgument(
+        "world_type",
+        default_value="datacenter",
+        description="Environment world: 'datacenter', 'warehouse', or 'test'",
+    )
+
+    declare_pro_model = DeclareLaunchArgument(
+        "pro_model",
+        default_value="true",
+        description="Whether to use the high-fidelity Phoenix Pro visual robot model",
+    )
+
+    declare_run_demo = DeclareLaunchArgument(
+        "run_demo",
+        default_value="false",
+        description="Automatically trigger the 6-stage competition demo sequence after Nav2 startup",
+    )
+
+    declare_launch_mqtt = DeclareLaunchArgument(
+        "launch_mqtt",
+        default_value="true",
+        description="Whether to launch MQTT bridge and control nodes for Web Command Center integration",
+    )
+
+    declare_launch_rviz = DeclareLaunchArgument(
+        "rviz",
+        default_value="false",
+        description="Whether to launch RViz2 for LiDAR, SLAM, and robot visualization",
     )
 
     return LaunchDescription(
         [
             set_rmw,
+            declare_world_type,
+            declare_pro_model,
+            declare_run_demo,
             declare_launch_mqtt,
             declare_launch_rviz,
-            gazebo,
-            robot_state_publisher,
-            spawn_robot,
-            bridge,
-            odom_tf,
-            slam,
-            delayed_nav2,
-            mqtt_nav,
-            mqtt_motor,
-            pump,
-            nozzle,
-            rviz_node,
+            OpaqueFunction(function=launch_setup),
         ]
     )

@@ -159,13 +159,22 @@ source /opt/ros/$ROS_DISTRO/setup.bash
 cd ambers_ws
 colcon build --symlink-install
 source install/setup.bash
-ros2 launch phoenix_description simulation.launch.py
+
+# Launch High-Fidelity Datacenter Environment (Recommended for Demos & Competitions)
+ros2 launch phoenix_description simulation.launch.py world_type:=datacenter pro_model:=true
+
+# Or Launch High-Bay Warehouse Logistics Environment
+# ros2 launch phoenix_description simulation.launch.py world_type:=warehouse pro_model:=true
+
+# Or Launch Hands-Free Automated Competition Demo Run (6-Stage Autonomous Response)
+# ros2 launch phoenix_description simulation.launch.py world_type:=datacenter pro_model:=true run_demo:=true
 ```
 
+* **Datacenter & Warehouse Worlds:** High-density 42U server racks with activity LEDs, cold-aisle containment, crash cart obstacle, technician casualty, and burning UPS server fire, or high-bay warehouse pallet storage racking with cargo hazards.
+* **Phoenix Pro Model:** High-fidelity robot mesh with anodized Deep Crimson livery, Sky-Blue wheels, 2020 aluminum arch, and 2-DOF suppression nozzle.
 * **Fully Integrated:** Bridges LiDAR (`/scan`), odometry (`/odom`), driving (`/cmd_vel`), camera (`/camera/image_raw`), and clock (`/clock`).
 * **Web HUD Ready:** Automatically launches MQTT control bridges (`mqtt_nav_client`, `mqtt_motor_bridge`, `pump_controller`, `nozzle_controller`) with simulation time enabled (`use_sim_time:=True`).
-* **Visual Fire Target:** The test arena includes an emissive flame target cylinder at `(2.5, 2.0, 0.2)`.
-* **20-Second Nav2 Stabilization:** Nav2 automatically launches 20 seconds after Gazebo to let SLAM Toolbox stabilize the `map -> odom` transform before costmaps activate.
+* **18-Second Nav2 Stabilization:** Nav2 automatically launches 18 seconds after Gazebo to let SLAM Toolbox stabilize the `map -> odom` transform before costmaps activate.
 
 In a second terminal, after sourcing the workspace, dispatch a map-frame goal (or use the Web Command Center D-Pad / Goal sender):
 

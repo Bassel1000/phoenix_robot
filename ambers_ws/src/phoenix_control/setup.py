@@ -34,6 +34,7 @@ setup(
             'nozzle_controller = phoenix_control.nozzle_controller:main',
             'mqtt_motor_bridge = phoenix_control.mqtt_motor_bridge:main',
             'simulation_odom_tf = phoenix_control.simulation_odom_tf:main',
+            'competition_demo_director = phoenix_control.competition_demo_director:main',
         ],
     },
 )

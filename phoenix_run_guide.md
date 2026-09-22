@@ -85,21 +85,29 @@ Open a WSL2 or Linux terminal:
 source /opt/ros/jazzy/setup.bash
 cd /mnt/d/Phoenix/ambers_ws
 source install/setup.bash
-ros2 launch phoenix_description simulation.launch.py
+
+# Option A: Launch High-Fidelity Datacenter Environment (Recommended for Demos & Competitions)
+ros2 launch phoenix_description simulation.launch.py world_type:=datacenter pro_model:=true
+
+# Option B: Launch High-Bay Warehouse Environment
+ros2 launch phoenix_description simulation.launch.py world_type:=warehouse pro_model:=true
+
+# Option C: Fully Automated Hands-Free Competition Demo Run (Automatic 6-Stage Mission)
+ros2 launch phoenix_description simulation.launch.py world_type:=datacenter pro_model:=true run_demo:=true
 ```
 
 * **What this runs:**
-  - **Gazebo Harmonic:** Spawns `phoenix_test_world.sdf` with an emissive fire target cylinder at `(2.5, 2.0, 0.2)`.
-  - **Phoenix Robot Model:** Spawns the robot with Deep Crimson livery, Sky-Blue wheels, and 4-wheel differential drive.
+  - **Gazebo Harmonic:** Spawns `phoenix_datacenter_world.sdf` (42U server racks, cold aisle, crash-cart obstacle, technician casualty, burning UPS server fire) or `phoenix_warehouse_world.sdf`.
+  - **Phoenix Pro Robot Model:** Spawns the upgraded Phoenix Pro model with Deep Metallic Crimson livery, Sky-Blue anodized wheel hubs, obsidian 2020 extrusion arch, Okdo LD06 TOF LiDAR, and front 2-DOF suppression turret.
   - **ros_gz_bridge:** Bridges `/clock`, `/scan`, `/cmd_vel`, `/odom`, and `/camera/image_raw`.
   - **Dynamic Odometry Broadcaster:** Publishes `odom -> base_footprint` TF.
   - **SLAM Toolbox:** Initializes asynchronous online mapping.
   - **MQTT Control Bridges:** Starts `mqtt_motor_bridge`, `mqtt_nav_client`, `pump_controller`, and `nozzle_controller` with `use_sim_time:=True`.
-  - **Automatic Nav2 Delay:** Nav2 is delayed by **20 seconds** to allow SLAM Toolbox and the TF tree (`map -> odom -> base_footprint`) to stabilize before costmaps initialize.
+  - **Automatic Nav2 Delay:** Nav2 is delayed by **18 seconds** to allow SLAM Toolbox and the TF tree (`map -> odom -> base_footprint`) to stabilize before costmaps initialize.
 
 > [!IMPORTANT]
-> **Wait 20 Seconds on Startup!**
-> You will see: `Nav2 launch delayed by 20.0 seconds to allow SLAM Toolbox & TF to stabilize...`
+> **Wait 18 Seconds on Startup!**
+> You will see: `Nav2 launch delayed by 18.0 seconds to allow SLAM Toolbox & TF to stabilize...`
 > Wait until the terminal logs show Nav2 lifecycle managers reaching the **active** state (`Nav2 is active and ready`) before sending autonomous navigation goals.
 
 ---
