@@ -13,7 +13,7 @@ class LidarPublisher(Node):
         super().__init__('lidar_publisher')
         self.get_logger().info("Initializing Decoupled Okdo LiDAR Publisher...")
         
-        self.publisher_ = self.create_publisher(LaserScan, 'scan', qos_profile_sensor_data)
+        self.publisher_ = self.create_publisher(LaserScan, 'scan', 10)
         
         # Use a short timeout of 10ms for non-blocking serial reads
         self.serial_port = serial.Serial('/dev/ttyAMA0', baudrate=230400, timeout=0.01)

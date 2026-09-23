@@ -62,8 +62,9 @@ class MotorController(Node):
         self.subscription = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
         self.timer = self.create_timer(0.05, self.control_loop) # 20Hz control loop
         
-        # Direct MQTT Hardware E-Stop Interlock (instant sub-10ms cutoff)
+        # Direct MQTT Hardware E-Stop Interlock & Speed Limiter
         self.e_stop_latched = False
+        self.speed_scale = 0.65 # Default Normal (0.35 for CRAWL, 0.65 for NORM, 1.0 for FAST)
         try:
             import paho.mqtt.client as mqtt
             import os
@@ -74,19 +75,41 @@ class MotorController(Node):
             
             def on_mqtt_connect(client, userdata, flags, rc, properties=None):
                 client.subscribe("phoenix/cmd/move")
+                client.subscribe("phoenix/estop")
+                client.subscribe("phoenix/cmd/speed")
                 client.subscribe("ambers/robot/navigation/cancel")
                 
             def on_mqtt_message(client, userdata, msg):
-                cmd = msg.payload.decode().strip().upper()
-                if cmd in ["STOP", "CANCEL"] or msg.topic == "ambers/robot/navigation/cancel":
+                payload_str = msg.payload.decode().strip()
+                
+                # Dynamic speed cap across both manual and Nav2 navigation
+                if msg.topic == "phoenix/cmd/speed":
+                    try:
+                        val = float(payload_str)
+                        if val <= 0.20:
+                            self.speed_scale = 0.35 # CRAWL: physical 35% power ceiling
+                        elif val <= 0.50:
+                            self.speed_scale = 0.65 # NORM: 65% power ceiling
+                        else:
+                            self.speed_scale = 1.00 # FAST: 100% full sprint
+                        self.get_logger().info(f"⚡ Hardware speed ceiling updated to: {self.speed_scale:.2f}")
+                    except ValueError:
+                        pass
+                    return
+
+                cmd = payload_str.upper()
+                if cmd in ["STOP", "CANCEL", "LATCH"] or msg.topic in ["ambers/robot/navigation/cancel", "phoenix/estop"]:
                     self.e_stop_latched = True
                     self.target_linear = 0.0
                     self.target_angular = 0.0
                     self.current_linear = 0.0
                     self.current_angular = 0.0
-                    self.set_motor(self.left_fwd, self.left_rev, 0.0)
-                    self.set_motor(self.right_fwd, self.right_rev, 0.0)
-                    self.get_logger().warn("🚨 HARDWARE E-STOP LATCHED: Motors instantly cut to 0.0!")
+                    if self.hardware_available:
+                        if self.left_fwd: self.left_fwd.value = 0.0
+                        if self.left_rev: self.left_rev.value = 0.0
+                        if self.right_fwd: self.right_fwd.value = 0.0
+                        if self.right_rev: self.right_rev.value = 0.0
+                    self.get_logger().warn("🚨 HARDWARE E-STOP LATCHED: All motor outputs cut to 0.0 immediately.")
                 elif cmd in ["FORWARD", "BACKWARD", "LEFT", "RIGHT", "UNLATCH"]:
                     self.e_stop_latched = False
 
@@ -113,6 +136,8 @@ class MotorController(Node):
     def set_motor(self, fwd_pin, rev_pin, speed):
         if not self.hardware_available or fwd_pin is None or rev_pin is None:
             return
+        # Apply hardware speed cap (CRAWL / NORM / FAST)
+        speed = speed * self.speed_scale
         # Cap at 95% PWM (0.95) instead of 100% (1.0). 
         # High-power BTS7960 motor drivers use bootstrap capacitors for their MOSFETs. 
         # If driven at exactly 100% duty cycle, the capacitor discharges and the motor stalls/whines!
