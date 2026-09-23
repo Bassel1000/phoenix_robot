@@ -36,19 +36,30 @@ latest_frame_pi = get_standby_frame()
 
 def generate_frames(camera_type):
     global latest_frame_tapo, latest_frame_pi
+    last_sent = None
+    target_fps = 30.0
+    frame_interval = 1.0 / target_fps
+    
     while True:
-        frame = None
-        if camera_type == 'tapo':
-            frame = latest_frame_tapo
-        elif camera_type == 'pi':
-            frame = latest_frame_pi
+        t_start = time.time()
+        frame = latest_frame_tapo if camera_type == 'tapo' else latest_frame_pi
             
         if frame is None:
-            time.sleep(0.01)
+            time.sleep(0.02)
             continue
             
+        if camera_type == 'pi' and frame is last_sent:
+            time.sleep(0.2)
+            continue
+
+        last_sent = frame
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        
+        elapsed = time.time() - t_start
+        sleep_dur = frame_interval - elapsed
+        if sleep_dur > 0:
+            time.sleep(sleep_dur)
 
 @app.route('/video_feed_tapo')
 def video_feed_tapo():
@@ -169,7 +180,13 @@ class CameraStream:
         elif isinstance(src, str) and (src.endswith(('.mp4', '.avi', '.mov', '.mkv', '.png', '.jpg')) or os.path.isfile(src)):
             self.is_file = True
 
-        self.stream = cv2.VideoCapture(src)
+        if isinstance(src, int) and os.name == 'nt':
+            self.stream = cv2.VideoCapture(src, cv2.CAP_DSHOW)
+            if not self.stream.isOpened():
+                self.stream = cv2.VideoCapture(src)
+        else:
+            self.stream = cv2.VideoCapture(src)
+
         if not self.is_file:
             self.stream.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.grabbed, self.frame = self.stream.read()
@@ -808,13 +825,18 @@ if __name__ == '__main__':
                 cv2.putText(display_frame_pi, f"Pi Fall: {fall_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fall_pi_pred > 0.5 else (0, 255, 0), 2)
                 cv2.putText(display_frame_pi, f"Pi Human: {human_pi_pred:.2f}", (10, 60), font, 0.8, (255, 0, 0) if human_pi_pred > 0.5 else (0, 255, 0), 2)
 
-        # Update global frames for Flask stream
+        # Update global frames for Flask stream with low-latency JPEG compression
         if display_frame_tapo is not None:
-            ret, buffer = cv2.imencode('.jpg', display_frame_tapo)
+            h_disp, w_disp = display_frame_tapo.shape[:2]
+            if w_disp > 960:
+                frame_for_stream = cv2.resize(display_frame_tapo, (960, int(h_disp * 960 / w_disp)))
+            else:
+                frame_for_stream = display_frame_tapo
+            ret, buffer = cv2.imencode('.jpg', frame_for_stream, [cv2.IMWRITE_JPEG_QUALITY, 70])
             if ret:
                 latest_frame_tapo = buffer.tobytes()
         if display_frame_pi is not None:
-            ret, buffer = cv2.imencode('.jpg', display_frame_pi)
+            ret, buffer = cv2.imencode('.jpg', display_frame_pi, [cv2.IMWRITE_JPEG_QUALITY, 70])
             if ret:
                 latest_frame_pi = buffer.tobytes()
 
