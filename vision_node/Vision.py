@@ -414,10 +414,36 @@ if __name__ == '__main__':
     else:
         print("PI_CAMERA_URL not set in .env. Pi camera set to standby (no laptop webcam clone).")
 
-    # Initialize MQTT client
+    # Initialize MQTT client with Mode & E-Stop Interlock
     mqtt_broker = os.environ.get("MQTT_BROKER", "localhost")
     print(f"Connecting to MQTT Broker at {mqtt_broker}...")
     mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Vision_Node_YOLO")
+    
+    current_robot_mode = "MANUAL" # Only dispatch auto targets when mode is AUTO
+    e_stop_triggered = False
+
+    def on_vision_connect(client, userdata, flags, rc, properties=None):
+        print(f"Vision MQTT connected. Subscribing to mode & safety topics...")
+        client.subscribe("phoenix/mode")
+        client.subscribe("phoenix/cmd/move")
+        client.subscribe("ambers/robot/navigation/cancel")
+
+    def on_vision_message(client, userdata, msg):
+        global current_robot_mode, e_stop_triggered
+        payload = msg.payload.decode().strip()
+        if msg.topic == "phoenix/mode":
+            current_robot_mode = payload.upper()
+            print(f"[VISION SAFETY] Operating Mode: {current_robot_mode}")
+        elif msg.topic in ["phoenix/cmd/move", "ambers/robot/navigation/cancel"]:
+            if payload.upper() in ["STOP", "CANCEL"] or msg.topic == "ambers/robot/navigation/cancel":
+                e_stop_triggered = True
+                print("[VISION SAFETY] E-STOP / Cancel received — Auto fire targeting suspended.")
+            elif payload.upper() in ["FORWARD", "BACKWARD", "LEFT", "RIGHT", "UNLATCH"]:
+                e_stop_triggered = False
+
+    mqtt_client.on_connect = on_vision_connect
+    mqtt_client.on_message = on_vision_message
+
     try:
         mqtt_client.connect(mqtt_broker, 1883, 60)
         mqtt_client.loop_start()
@@ -433,6 +459,8 @@ if __name__ == '__main__':
     robot_start_t = None
     last_heartbeat_time = 0.0
     last_goal_time = 0.0
+    last_dispatched_x = None
+    last_dispatched_y = None
 
     # Latching state for autonomous fire targeting
     latched_fire_x = None
@@ -766,8 +794,19 @@ if __name__ == '__main__':
             except Exception as e:
                 print(f"MQTT publish error (fire_detected): {e}")
 
+            if not fire_active:
+                last_dispatched_x = None
+                last_dispatched_y = None
+
+            # Only dispatch navigation targets when operating in AUTONOMOUS mode and E-Stop is clear
             if fire_active and fire_x_target is not None and fire_y_target is not None:
-                if T_matrix is None and robot_start_T is None:
+                if current_robot_mode != "AUTO":
+                    # In MANUAL mode, operator controls driving directly; do not take over
+                    pass
+                elif e_stop_triggered:
+                    # In E-STOP state, do not dispatch any autonomous navigation goals
+                    pass
+                elif T_matrix is None and robot_start_T is None:
                     print("[NAV HOLD] Robot marker lost. Navigation target not published.")
                 else:
                     d_safe = 0.3  # Stop 30cm away from candle (standoff distance)
@@ -781,17 +820,27 @@ if __name__ == '__main__':
                         # Head directly towards the fire from standoff position
                         yaw_nav = math.atan2(dy, dx)
                         
-                        nav_payload = {
-                            "x": round(float(x_nav), 3),
-                            "y": round(float(y_nav), 3),
-                            "yaw": round(float(yaw_nav), 3),
-                            "frame_id": "map"
-                        }
-                        try:
-                            mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
-                            print(f"[AUTONOMOUS TARGET] Fire target active! Safe Goal: x={x_nav:.3f}, y={y_nav:.3f}, yaw={yaw_nav:.3f} (Distance left: {d_total:.3f}m)")
-                        except Exception as e:
-                            print(f"MQTT publish error (navigation target): {e}")
+                        # Anti-Preemption Gate: Don't interrupt Nav2 if goal hasn't shifted significantly
+                        target_shifted = True
+                        if last_dispatched_x is not None and last_dispatched_y is not None:
+                            shift_dist = np.hypot(x_nav - last_dispatched_x, y_nav - last_dispatched_y)
+                            if shift_dist < 0.40:
+                                target_shifted = False
+                        
+                        if target_shifted:
+                            last_dispatched_x = x_nav
+                            last_dispatched_y = y_nav
+                            nav_payload = {
+                                "x": round(float(x_nav), 3),
+                                "y": round(float(y_nav), 3),
+                                "yaw": round(float(yaw_nav), 3),
+                                "frame_id": "map"
+                            }
+                            try:
+                                mqtt_client.publish("ambers/robot/navigation/target", json.dumps(nav_payload))
+                                print(f"[AUTONOMOUS TARGET] Fire target dispatched! Goal: x={x_nav:.3f}, y={y_nav:.3f}, yaw={yaw_nav:.3f} (Distance: {d_total:.3f}m)")
+                            except Exception as e:
+                                print(f"MQTT publish error (navigation target): {e}")
                     else:
                         print(f"[TARGET REACHED] Robot within safe distance ({d_total:.3f}m <= {d_safe}m). Standoff lock active!")
             

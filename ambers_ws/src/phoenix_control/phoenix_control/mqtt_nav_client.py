@@ -32,6 +32,9 @@ class MqttNavClient(Node):
         self.active_goal_x = None
         self.active_goal_y = None
         self.current_goal_handle = None
+        self.control_mode = "MANUAL"
+        self.e_stop_latched = False
+        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         
         # MQTT Setup (Supports both paho-mqtt v1.x and v2.x)
         try:
@@ -56,25 +59,46 @@ class MqttNavClient(Node):
         client.subscribe("ambers/robot/navigation/cancel")
         client.subscribe("ambers/robot/pump")
         client.subscribe("phoenix/cmd/move")
+        client.subscribe("phoenix/mode")
 
     def on_message(self, client, userdata, msg):
         payload_raw = msg.payload.decode().strip()
         self.get_logger().info(f"Received MQTT Message on {msg.topic}: {payload_raw}")
         
+        # Mode Switch Handler
+        if msg.topic == "phoenix/mode":
+            self.control_mode = payload_raw.upper()
+            self.get_logger().info(f"Nav2 Bridge: Mode switched to {self.control_mode}")
+            if self.control_mode == "MANUAL":
+                if self.current_goal_handle is not None:
+                    self.current_goal_handle.cancel_goal_async()
+                    self.current_goal_handle = None
+                self.active_goal_x = None
+                self.active_goal_y = None
+                for _ in range(3):
+                    self.cmd_vel_pub.publish(Twist())
+            return
+
         # Immediate Nav2 Goal Cancellation / E-Stop Handler
         if msg.topic in ["ambers/robot/navigation/cancel", "phoenix/cmd/move"]:
-            if msg.topic == "phoenix/cmd/move" and payload_raw.upper() != "STOP":
-                # Regular teleop direction command, do nothing here (handled by mqtt_motor_bridge)
+            cmd = payload_raw.upper()
+            if cmd in ["STOP", "CANCEL"] or msg.topic == "ambers/robot/navigation/cancel":
+                self.e_stop_latched = True
+                self.get_logger().warn(f"E-STOP LATCHED via {msg.topic}. Canceling active Nav2 goal...")
+                if self.current_goal_handle is not None:
+                    self.current_goal_handle.cancel_goal_async()
+                    self.current_goal_handle = None
+                self.active_goal_x = None
+                self.active_goal_y = None
+                for _ in range(5):
+                    self.cmd_vel_pub.publish(Twist())
+                self.publish_status("GOAL_CANCELED", {"message": "Active navigation goal canceled by operator / E-Stop."})
                 return
-                
-            self.get_logger().warn(f"Cancellation/E-Stop requested via {msg.topic}. Canceling active Nav2 goal...")
-            if self.current_goal_handle is not None:
-                self.current_goal_handle.cancel_goal_async()
-                self.current_goal_handle = None
-            self.active_goal_x = None
-            self.active_goal_y = None
-            self.publish_status("GOAL_CANCELED", {"message": "Active navigation goal canceled by operator / E-Stop."})
-            return
+            elif cmd in ["FORWARD", "BACKWARD", "LEFT", "RIGHT", "UNLATCH"]:
+                self.e_stop_latched = False
+                return
+            else:
+                return
 
         try:
             data = json.loads(payload_raw)
@@ -83,7 +107,6 @@ class MqttNavClient(Node):
                 trigger = data.get("activate", False)
                 if trigger:
                     self.get_logger().info("Received MQTT Pump trigger. Activating pump...")
-                    # Cancel any active goal if we are triggering the pump directly
                     if self.current_goal_handle is not None:
                         self.get_logger().info("Canceling active Nav2 goal before starting pump...")
                         self.current_goal_handle.cancel_goal_async()
@@ -94,32 +117,34 @@ class MqttNavClient(Node):
                     self.pump_trigger.publish(msg_out)
                 return
             
+            # Guard against E-Stop
+            if self.e_stop_latched:
+                self.get_logger().warn("Navigation target REJECTED: E-Stop is currently latched.")
+                return
+
             # Coordinates are map-frame positions unless a different frame is explicit.
             target_x = float(data.get("x", 0.0))
             target_y = float(data.get("y", 0.0))
             target_frame = str(data.get("frame_id", "map"))
             
             # If explicit yaw is provided, use it directly.
-            # If navigating near the fire hazard (2.5, 2.0), calculate orientation pointing nozzle straight at flame.
             if "yaw" in data and data["yaw"] is not None:
                 target_yaw = float(data["yaw"])
             elif math.hypot(2.5 - target_x, 2.0 - target_y) < 1.5:
-                # Stand-off facing fire cylinder at (2.5, 2.0)
                 target_yaw = math.atan2(2.0 - target_y, 2.5 - target_x)
             elif target_x < 0 and target_y == 0:
                 target_yaw = 0.0
             else:
                 target_yaw = math.atan2(target_y, target_x)
             
-            # Check if this goal is already being executed
-            if self.active_goal_x is not None and self.active_goal_y is not None:
+            # Anti-Preemption Gate: Don't cancel active trajectory if target has not shifted significantly (>0.45m)
+            if self.current_goal_handle is not None and self.active_goal_x is not None and self.active_goal_y is not None:
                 dx = target_x - self.active_goal_x
                 dy = target_y - self.active_goal_y
                 distance = math.sqrt(dx**2 + dy**2)
                 
-                # If target has not changed significantly, ignore the new MQTT message to prevent preemption
-                if distance < 0.10:
-                    self.get_logger().info(f"New goal is close to active goal (diff: {distance:.3f}m). Ignoring to prevent preemption.")
+                if distance < 0.45:
+                    self.get_logger().info(f"Active goal in progress (shift: {distance:.3f}m < 0.45m). Ignoring to prevent path oscillation.")
                     return
             
             self.send_nav_goal(target_x, target_y, target_yaw, target_frame)
