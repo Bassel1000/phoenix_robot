@@ -38,8 +38,11 @@ class MotorController(Node):
             self.right_rev = None
         
         # Acceleration / Smoothing Configuration
-        self.linear_step = 0.2 
-        self.angular_step = 0.5
+        # Soft ramp-up protects hardware mounting; clean decel provides responsive stopping
+        self.linear_step = 0.03       # 0.6 m/s^2 smooth ramp up (no component displacement)
+        self.linear_decel_step = 0.08 # Clean, prompt deceleration
+        self.angular_step = 0.08      # Smooth yaw acceleration (no whipping)
+        self.angular_decel_step = 0.16
         
         self.target_linear = 0.0
         self.current_linear = 0.0
@@ -59,7 +62,11 @@ class MotorController(Node):
         self.subscription = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
         self.timer = self.create_timer(0.05, self.control_loop) # 20Hz control loop
             
-    def approach_target(self, current, target, step):
+    def approach_target(self, current, target, accel_step, decel_step):
+        # Differentiate between speeding up vs slowing down
+        is_decelerating = (current > 0 and target < current) or (current < 0 and target > current) or (target == 0.0)
+        step = decel_step if is_decelerating else accel_step
+
         if current < target:
             return min(current + step, target)
         elif current > target:
@@ -84,10 +91,18 @@ class MotorController(Node):
             rev_pin.value = 0.0
 
     def cmd_vel_callback(self, msg):
-        # Update targets based on joystick/keyboard input
+        # Update targets based on joystick/keyboard/Nav2 input
         self.target_linear = msg.linear.x
         self.target_angular = msg.angular.z
         self.last_cmd_time = self.get_clock().now()
+        
+        # Instant stop bypass: if explicit full stop requested, zero out immediately
+        if abs(msg.linear.x) < 0.001 and abs(msg.angular.z) < 0.001:
+            if abs(self.current_linear) < 0.08 and abs(self.current_angular) < 0.08:
+                self.current_linear = 0.0
+                self.current_angular = 0.0
+                self.set_motor(self.left_fwd, self.left_rev, 0.0)
+                self.set_motor(self.right_fwd, self.right_rev, 0.0)
 
     def control_loop(self):
         try:
@@ -99,8 +114,18 @@ class MotorController(Node):
                 self.target_angular = 0.0
 
             # Smoothly interpolate current speeds towards target speeds
-            self.current_linear = self.approach_target(self.current_linear, self.target_linear, self.linear_step)
-            self.current_angular = self.approach_target(self.current_angular, self.target_angular, self.angular_step)
+            self.current_linear = self.approach_target(
+                self.current_linear, self.target_linear, self.linear_step, self.linear_decel_step
+            )
+            self.current_angular = self.approach_target(
+                self.current_angular, self.target_angular, self.angular_step, self.angular_decel_step
+            )
+            
+            # Snap to zero if practically stopped
+            if self.target_linear == 0.0 and abs(self.current_linear) < 0.015:
+                self.current_linear = 0.0
+            if self.target_angular == 0.0 and abs(self.current_angular) < 0.015:
+                self.current_angular = 0.0
             
             # Integrate Odometry
             dt = 0.05
@@ -137,6 +162,12 @@ class MotorController(Node):
         except Exception as e:
             self.get_logger().error(f"Error in motor control loop: {e}")
         
+        # Hard stop if zero velocity reached
+        if self.current_linear == 0.0 and self.current_angular == 0.0:
+            self.set_motor(self.left_fwd, self.left_rev, 0.0)
+            self.set_motor(self.right_fwd, self.right_rev, 0.0)
+            return
+
         # Implement true inverse kinematics from Section 10.2
         B = 0.35   # Track Width
         V_max = 1.0 # Base scaling factor
@@ -149,12 +180,12 @@ class MotorController(Node):
         right_speed = v_r / V_max
         
         # --- DEADBAND COMPENSATOR ---
-        # Maps requested movement into the active motor power band smoothly
-        def apply_deadband(spd, deadband=0.60):
-            if abs(spd) < 0.03: return 0.0
+        # Maps requested movement into active motor power band smoothly without sudden jolts
+        def apply_deadband(spd, deadband=0.22):
+            if abs(spd) < 0.02: return 0.0
             sign = 1.0 if spd > 0 else -1.0
-            # Scale proportionally from deadband to 0.95 to eliminate abrupt jumps
-            mag = min(max((abs(spd) - 0.03) / 0.97, 0.0), 1.0)
+            # Scale smoothly from deadband (22%) to 0.95 without abrupt shock
+            mag = min(max((abs(spd) - 0.02) / 0.98, 0.0), 1.0)
             return sign * (deadband + mag * (0.95 - deadband))
             
         left_speed = apply_deadband(left_speed)

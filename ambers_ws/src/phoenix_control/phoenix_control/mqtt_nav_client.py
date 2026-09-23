@@ -52,13 +52,32 @@ class MqttNavClient(Node):
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
         self.get_logger().info(f"Connected to Local Broker with result code {rc}")
-        client.subscribe("ambers/robot/navigation/target") # Update topic as needed
+        client.subscribe("ambers/robot/navigation/target")
+        client.subscribe("ambers/robot/navigation/cancel")
         client.subscribe("ambers/robot/pump")
+        client.subscribe("phoenix/cmd/move")
 
     def on_message(self, client, userdata, msg):
-        self.get_logger().info(f"Received MQTT Message on {msg.topic}: {msg.payload.decode()}")
+        payload_raw = msg.payload.decode().strip()
+        self.get_logger().info(f"Received MQTT Message on {msg.topic}: {payload_raw}")
+        
+        # Immediate Nav2 Goal Cancellation / E-Stop Handler
+        if msg.topic in ["ambers/robot/navigation/cancel", "phoenix/cmd/move"]:
+            if msg.topic == "phoenix/cmd/move" and payload_raw.upper() != "STOP":
+                # Regular teleop direction command, do nothing here (handled by mqtt_motor_bridge)
+                return
+                
+            self.get_logger().warn(f"Cancellation/E-Stop requested via {msg.topic}. Canceling active Nav2 goal...")
+            if self.current_goal_handle is not None:
+                self.current_goal_handle.cancel_goal_async()
+                self.current_goal_handle = None
+            self.active_goal_x = None
+            self.active_goal_y = None
+            self.publish_status("GOAL_CANCELED", {"message": "Active navigation goal canceled by operator / E-Stop."})
+            return
+
         try:
-            data = json.loads(msg.payload.decode())
+            data = json.loads(payload_raw)
             
             if msg.topic == "ambers/robot/pump":
                 trigger = data.get("activate", False)
@@ -68,6 +87,7 @@ class MqttNavClient(Node):
                     if self.current_goal_handle is not None:
                         self.get_logger().info("Canceling active Nav2 goal before starting pump...")
                         self.current_goal_handle.cancel_goal_async()
+                        self.current_goal_handle = None
                     
                     msg_out = Bool()
                     msg_out.data = True

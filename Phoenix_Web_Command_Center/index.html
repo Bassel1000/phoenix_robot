@@ -819,6 +819,38 @@ input { font-family: var(--font-mono); outline: none; }
 .dpad-key:nth-child(4) { grid-area: 2 / 3; }
 .dpad-key:nth-child(5) { grid-area: 3 / 2; }
 
+/* Dynamic Speed Mode Bar */
+.speed-selector-bar {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  max-width: 130px;
+  margin: 0.15rem auto 0.4rem;
+}
+.speed-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.speed-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.speed-btn.active {
+  background: var(--accent-sky-blue);
+  border-color: var(--accent-sky-blue);
+  color: #07090E;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
 /* ─── LOWER DECK: TELEMETRY & LOGS ─────────────────────────────── */
 .lower-deck-grid {
   display: grid;
@@ -1141,6 +1173,11 @@ input { font-family: var(--font-mono); outline: none; }
           <!-- Locomotion D-Pad -->
           <div class="pad-box">
             <span class="pad-label">🎮 Drive Control</span>
+            <div class="speed-selector-bar">
+              <button class="speed-btn" onclick="setDriveSpeed(0.20, this)" title="Crawl mode (0.20 m/s)">CRAWL</button>
+              <button class="speed-btn active" onclick="setDriveSpeed(0.35, this)" title="Smooth normal cruising (0.35 m/s)">NORM</button>
+              <button class="speed-btn" onclick="setDriveSpeed(0.50, this)" title="Fast mode (0.50 m/s)">FAST</button>
+            </div>
             <div class="tactical-dpad" id="drivePad">
               <button class="dpad-key" onpointerdown="sendMove('FORWARD')" onpointerup="sendMove('STOP')" onpointerleave="sendMove('STOP')">▲</button>
               <button class="dpad-key" onpointerdown="sendMove('LEFT')" onpointerup="sendMove('STOP')" onpointerleave="sendMove('STOP')">◀</button>
@@ -1783,11 +1820,32 @@ function sendMove(dir) {
   }
 }
 
+function setDriveSpeed(spd, btn) {
+  pub('phoenix/cmd/speed', String(spd));
+  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  addLog(`⚡ Drive Speed Adjusted: ${(spd * 100).toFixed(0)}% (${spd.toFixed(2)} m/s)`, 'info');
+}
+
 function emergencyStop() {
+  // 1. Immediately drop out of AUTO into MANUAL to prevent autonomous re-trigger
+  setControlMode(true);
+
+  // 2. Disarm any active Nav2 path instantly
+  pub('ambers/robot/navigation/cancel', JSON.stringify({ action: 'cancel' }));
+
+  // 3. Stop drive motors immediately with a 3-pulse burst to ensure instantaneous cutoff
   sendMove('STOP');
+  setTimeout(() => pub($('tMove').value, 'STOP'), 25);
+  setTimeout(() => pub($('tMove').value, 'STOP'), 60);
+
+  // 4. Halt nozzle gimbal
   nozzleStop();
+
+  // 5. Deactivate extinguisher pump if running
   if (pumpIsOn) togglePump();
-  addLog('EMERGENCY STOP TRIGGERED — All actuators halted.', 'crit');
+
+  addLog('🛑 EMERGENCY STOP TRIGGERED — Nav2 goal canceled & all actuators halted.', 'crit');
 }
 
 // Extinguisher Pump

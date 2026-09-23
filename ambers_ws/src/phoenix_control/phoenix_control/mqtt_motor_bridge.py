@@ -13,9 +13,9 @@ class MqttMotorBridge(Node):
         # Publisher for motor commands
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         
-        # Speed configuration (parameterized for agile teleoperation)
-        self.declare_parameter('linear_speed', 0.60)
-        self.declare_parameter('angular_speed', 1.6)
+        # Speed configuration (parameterized for smooth, stable teleoperation)
+        self.declare_parameter('linear_speed', 0.35)
+        self.declare_parameter('angular_speed', 0.90)
         self.linear_speed = float(self.get_parameter('linear_speed').value)
         self.angular_speed = float(self.get_parameter('angular_speed').value)
         
@@ -30,7 +30,7 @@ class MqttMotorBridge(Node):
             self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Motor_Bridge")
         except AttributeError:
             self.mqtt_client = mqtt.Client(client_id="Motor_Bridge")
-        self.mqtt_client.on_connect = self.on_mqtt_connect
+        self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_mqtt_message
         
         import os
@@ -42,12 +42,27 @@ class MqttMotorBridge(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to connect to MQTT broker: {e}")
 
-    def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
+    def on_connect(self, client, userdata, flags, rc, properties=None):
         self.get_logger().info("MQTT connected, subscribing to motor commands...")
         client.subscribe("phoenix/cmd/move")
+        client.subscribe("phoenix/cmd/speed")
 
     def on_mqtt_message(self, client, userdata, msg):
-        command = msg.payload.decode().strip().upper()
+        payload_str = msg.payload.decode().strip()
+        
+        # Dynamic speed adjustment from Web UI
+        if msg.topic == "phoenix/cmd/speed":
+            try:
+                new_speed = float(payload_str)
+                if 0.1 <= new_speed <= 1.0:
+                    self.linear_speed = new_speed
+                    self.angular_speed = min(new_speed * 2.5, 1.8)
+                    self.get_logger().info(f"Updated teleop speed: linear={self.linear_speed:.2f} m/s, angular={self.angular_speed:.2f} rad/s")
+            except ValueError:
+                pass
+            return
+
+        command = payload_str.upper()
         self.get_logger().info(f"Web UI motor command: {command}")
         
         twist = Twist()
@@ -65,8 +80,12 @@ class MqttMotorBridge(Node):
             twist.angular.z = -self.angular_speed
             self.moving = True
         elif command == "STOP":
-            # Zero velocity
+            # Zero velocity burst for instantaneous stop response
             self.moving = False
+            self.last_move_time = None
+            for _ in range(3):
+                self.cmd_vel_pub.publish(twist)
+            return
         else:
             self.get_logger().warn(f"Unknown motor command: {command}")
             return
