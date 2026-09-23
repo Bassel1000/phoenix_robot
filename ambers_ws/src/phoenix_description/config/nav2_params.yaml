@@ -112,10 +112,10 @@ controller_server:
       vx_std: 0.15
       vy_std: 0.1
       wz_std: 0.35
-      vx_max: 0.80       # Tactical fire response cruising speed (up from 0.35 m/s)
+      vx_max: 0.45       # Controlled, stable cruising speed for safe indoor obstacle avoidance
       vx_min: 0.0        # Prevent reverse oscillation during navigation
       vy_max: 0.0        # DiffDrive has no lateral velocity
-      wz_max: 2.2        # Fast turn rate (rotates 180 deg in ~1.4s)
+      wz_max: 1.6        # Safe turning rate
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 2.0
@@ -150,22 +150,22 @@ controller_server:
       PreferForwardCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 6.0
+        cost_weight: 5.0
         threshold_to_consider: 0.5
       CostCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 3.81
-        near_collision_cost: 253
-        critical_cost: 300.0
-        consider_footprint: false
-        collision_cost: 1000000.0
-        near_goal_distance: 1.0
+        cost_weight: 18.0          # High priority: avoids obstacles aggressively
+        near_collision_cost: 250
+        critical_cost: 280.0
+        consider_footprint: true   # Check full chassis boundary, not just single point
+        collision_cost: 2000000.0
+        near_goal_distance: 0.8
         trajectory_point_step: 2
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 8.0
+        cost_weight: 5.0           # Lowered from 8.0 so robot swerves around obstacles instead of forcing straight path
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 4
         threshold_to_consider: 0.5
@@ -201,13 +201,13 @@ local_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      robot_radius: 0.22
+      robot_radius: 0.24
       transform_tolerance: 2.0
       plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0
-        inflation_radius: 0.35
+        cost_scaling_factor: 2.5
+        inflation_radius: 0.50
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -256,8 +256,8 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0
-        inflation_radius: 0.35
+        cost_scaling_factor: 2.5
+        inflation_radius: 0.50
       always_send_full_costmap: True
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.

@@ -61,6 +61,43 @@ class MotorController(Node):
         
         self.subscription = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
         self.timer = self.create_timer(0.05, self.control_loop) # 20Hz control loop
+        
+        # Direct MQTT Hardware E-Stop Interlock (instant sub-10ms cutoff)
+        self.e_stop_latched = False
+        try:
+            import paho.mqtt.client as mqtt
+            import os
+            try:
+                self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Motor_Safety_Interlock")
+            except AttributeError:
+                self.mqtt_client = mqtt.Client(client_id="Motor_Safety_Interlock")
+            
+            def on_mqtt_connect(client, userdata, flags, rc, properties=None):
+                client.subscribe("phoenix/cmd/move")
+                client.subscribe("ambers/robot/navigation/cancel")
+                
+            def on_mqtt_message(client, userdata, msg):
+                cmd = msg.payload.decode().strip().upper()
+                if cmd in ["STOP", "CANCEL"] or msg.topic == "ambers/robot/navigation/cancel":
+                    self.e_stop_latched = True
+                    self.target_linear = 0.0
+                    self.target_angular = 0.0
+                    self.current_linear = 0.0
+                    self.current_angular = 0.0
+                    self.set_motor(self.left_fwd, self.left_rev, 0.0)
+                    self.set_motor(self.right_fwd, self.right_rev, 0.0)
+                    self.get_logger().warn("🚨 HARDWARE E-STOP LATCHED: Motors instantly cut to 0.0!")
+                elif cmd in ["FORWARD", "BACKWARD", "LEFT", "RIGHT", "UNLATCH"]:
+                    self.e_stop_latched = False
+
+            self.mqtt_client.on_connect = on_mqtt_connect
+            self.mqtt_client.on_message = on_mqtt_message
+            broker_ip = os.environ.get('MQTT_BROKER_IP', 'localhost')
+            self.mqtt_client.connect(broker_ip, 1883, 60)
+            self.mqtt_client.loop_start()
+            self.get_logger().info("Hardware E-Stop direct MQTT interlock active.")
+        except Exception as e:
+            self.get_logger().warn(f"MQTT safety interlock not started: {e}")
             
     def approach_target(self, current, target, accel_step, decel_step):
         # Differentiate between speeding up vs slowing down
@@ -91,6 +128,16 @@ class MotorController(Node):
             rev_pin.value = 0.0
 
     def cmd_vel_callback(self, msg):
+        # If hardware E-stop is latched, block any velocity commands
+        if self.e_stop_latched:
+            self.target_linear = 0.0
+            self.target_angular = 0.0
+            self.current_linear = 0.0
+            self.current_angular = 0.0
+            self.set_motor(self.left_fwd, self.left_rev, 0.0)
+            self.set_motor(self.right_fwd, self.right_rev, 0.0)
+            return
+
         # Update targets based on joystick/keyboard/Nav2 input
         self.target_linear = msg.linear.x
         self.target_angular = msg.angular.z

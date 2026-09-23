@@ -1784,6 +1784,9 @@ function sendNavGoal() {
     }
   }
 
+  // Unlatch motor controller hardware E-Stop for the new navigation trajectory
+  pub($('tMove').value, 'UNLATCH');
+
   const payloadObj = { x, y, frame_id: "map" };
   if (yaw !== null && yaw !== undefined) {
     payloadObj.yaw = parseFloat(yaw.toFixed(4));
