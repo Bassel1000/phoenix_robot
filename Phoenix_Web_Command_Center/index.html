@@ -1231,8 +1231,12 @@ input { font-family: var(--font-mono); outline: none; }
     </div>
 
     <div class="cfg-field">
-      <label>BROKER WEBSOCKET URL</label>
-      <input type="text" id="cfgBroker" value="ws://127.0.0.1:9001/mqtt" />
+      <label>BROKER WEBSOCKET URL (AUTO-SAVED PERMANENTLY)</label>
+      <input type="text" id="cfgBroker" value="ws://192.168.137.163:9001/mqtt" />
+      <div style="display:flex; gap:0.4rem; margin-top:0.35rem;">
+        <button type="button" class="btn-small" style="flex:1; background:rgba(0,255,200,0.15); border-color:var(--accent-cyan); color:var(--accent-cyan);" onclick="saveBrokerPermanently()">💾 Save Permanent</button>
+        <button type="button" class="btn-small" style="flex:1;" onclick="resetBrokerDefault()">↺ Reset Default</button>
+      </div>
     </div>
 
     <div class="cfg-field">
@@ -1329,14 +1333,34 @@ function closeSettingsOnBackdrop(e) { if (e.target.id === 'settingsModal') close
 
 function setBrokerPreset(target) {
   if (target === 'sim') {
-    $('cfgBroker').value = 'ws://127.0.0.1:9001/mqtt';
-    localStorage.setItem('cfgBroker', 'ws://127.0.0.1:9001/mqtt');
+    const url = 'ws://127.0.0.1:9001/mqtt';
+    $('cfgBroker').value = url;
+    localStorage.setItem('cfgBroker', url);
     addLog('Preset applied: Local Gazebo Simulation (9001)', 'ok');
   } else if (target === 'pi') {
-    const saved = localStorage.getItem('cfgBroker_pi') || 'ws://192.168.1.100:9001/mqtt';
+    const saved = localStorage.getItem('cfgBroker_pi') || 'ws://192.168.137.163:9001/mqtt';
     $('cfgBroker').value = saved;
+    localStorage.setItem('cfgBroker', saved);
     addLog(`Preset applied: Robot Pi (${saved})`, 'info');
   }
+}
+
+function saveBrokerPermanently() {
+  const host = $('cfgBroker').value.trim();
+  if (!host) return;
+  localStorage.setItem('cfgBroker', host);
+  if (!host.includes('127.0.0.1')) {
+    localStorage.setItem('cfgBroker_pi', host);
+  }
+  addLog(`Broker URL permanently saved: ${host}`, 'ok');
+}
+
+function resetBrokerDefault() {
+  const defaultUrl = 'ws://192.168.137.163:9001/mqtt';
+  $('cfgBroker').value = defaultUrl;
+  localStorage.setItem('cfgBroker', defaultUrl);
+  localStorage.setItem('cfgBroker_pi', defaultUrl);
+  addLog(`Reset broker URL to default: ${defaultUrl}`, 'info');
 }
 
 // ── MQTT LOGIC ────────────────────────────────────────────────
@@ -1782,6 +1806,7 @@ function nozzleCenter(){ pub('phoenix/cmd/nozzle', 'CENTER'); addLog('🎯 Nozzl
 function connectCam(cam) {
   const url = $(`url${cam}`).value.trim();
   if (!url) return;
+  localStorage.setItem(`cam_url_${cam}`, url);
   const img = $(`img${cam}`), vid = $(`vid${cam}`), ph = $(`ph${cam}`);
 
   if (camState[cam]?.getTracks) {
@@ -1896,6 +1921,36 @@ document.addEventListener('keyup', e => {
 
 // ── INITIALIZATION ────────────────────────────────────────────
 window.onload = function() {
+  // 1. Permanently persist Broker URL
+  const savedBroker = localStorage.getItem('cfgBroker');
+  if (savedBroker) {
+    $('cfgBroker').value = savedBroker;
+  } else {
+    localStorage.setItem('cfgBroker', $('cfgBroker').value.trim());
+  }
+
+  // Auto-save immediately whenever broker field is typed or changed
+  $('cfgBroker').addEventListener('input', (e) => {
+    const val = e.target.value.trim();
+    localStorage.setItem('cfgBroker', val);
+    if (!val.includes('127.0.0.1')) {
+      localStorage.setItem('cfgBroker_pi', val);
+    }
+  });
+
+  // 2. Permanently persist Camera URLs
+  const savedSurv = localStorage.getItem('cam_url_Surv');
+  if (savedSurv) $('urlSurv').value = savedSurv;
+  const savedRobot = localStorage.getItem('cam_url_Robot');
+  if (savedRobot) $('urlRobot').value = savedRobot;
+
+  $('urlSurv').addEventListener('input', (e) => {
+    localStorage.setItem('cam_url_Surv', e.target.value.trim());
+  });
+  $('urlRobot').addEventListener('input', (e) => {
+    localStorage.setItem('cam_url_Robot', e.target.value.trim());
+  });
+
   connectCam('Surv');
   connectCam('Robot');
   setTimeout(() => {

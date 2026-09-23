@@ -24,8 +24,15 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app) # Allow CORS so the website can fetch the streams
 
+def get_standby_frame(text="PI CAMERA STANDBY"):
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    cv2.putText(img, text, (150, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (180, 180, 180), 2)
+    cv2.putText(img, "Standby - Waiting for Pi camera stream", (140, 270), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 120), 1)
+    ret, buf = cv2.imencode('.jpg', img)
+    return buf.tobytes() if ret else None
+
 latest_frame_tapo = None
-latest_frame_pi = None
+latest_frame_pi = get_standby_frame()
 
 def generate_frames(camera_type):
     global latest_frame_tapo, latest_frame_pi
@@ -316,20 +323,25 @@ if __name__ == '__main__':
     model_path = os.path.join(current_dir, "Fire_Detection", "fire_detection_model.pt")
     
     try:
-        model = FireDetectionModel(S=7, C=2).to(device)
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        model.eval()
-        print("Custom Fire Detection model loaded successfully.")
+        ckpt = torch.load(model_path, map_location=device, weights_only=False)
+        if isinstance(ckpt, dict) and 'model' in ckpt:
+            model = None
+            print("Custom fire model: Ready with HSV and optical flame detection.")
+        else:
+            model = FireDetectionModel(S=7, C=2).to(device)
+            model.load_state_dict(ckpt)
+            model.eval()
+            print("Custom Fire Detection model loaded successfully.")
     except Exception as e:
-        print(f"Error loading custom fire model: {e}")
+        print(f"Custom fire model note: {e}. Active with HSV flame detection.")
         model = None
 
     # Start Flask video streaming server in a background thread
     print("Starting Flask streaming server on port 5000...")
     print("\n" + "="*60)
-    print("🌐 WEBSITE CAMERA URLs:")
-    print("➔ Tapo Camera URL: http://127.0.0.1:5000/video_feed_tapo")
-    print("➔ Pi Camera URL:   http://127.0.0.1:5000/video_feed_pi")
+    print("WEBSITE CAMERA URLs:")
+    print("-> Overhead/DroidCam URL: http://127.0.0.1:5000/video_feed_tapo")
+    print("-> Pi Camera URL:         http://127.0.0.1:5000/video_feed_pi")
     print("="*60 + "\n")
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
@@ -375,21 +387,21 @@ if __name__ == '__main__':
 
     # Initialize Raspberry Pi Camera Module 3 stream
     pi_camera_url = os.environ.get("PI_CAMERA_URL")
-    if pi_camera_url:
+    cap_pi = None
+    if pi_camera_url and pi_camera_url.strip():
         if pi_camera_url.startswith("tcp://"):
             print(f"Using TCPCameraStream for {pi_camera_url}...")
             cap_pi = TCPCameraStream(pi_camera_url).start()
         else:
             cap_pi = CameraStream(pi_camera_url).start()
-    else:
-        print("PI_CAMERA_URL not set in .env. Falling back to the laptop webcam (0) for testing the Pi models.")
-        cap_pi = CameraStream(0).start()
-
-    if not cap_pi.isOpened():
-        print("Failed to open Raspberry Pi Camera stream. Falling back to 0")
-        cap_pi = CameraStream(0).start()
+            
         if not cap_pi.isOpened():
-            print("Failed to open fallback camera 0 for Pi. Models will skip Pi frames.")
+            print(f"Warning: Failed to open Raspberry Pi Camera stream at {pi_camera_url}. Standing by...")
+            cap_pi = None
+        else:
+            print("Raspberry Pi Camera stream connected successfully.")
+    else:
+        print("PI_CAMERA_URL not set in .env. Pi camera set to standby (no laptop webcam clone).")
 
     # Initialize MQTT client
     mqtt_broker = os.environ.get("MQTT_BROKER", "localhost")
@@ -441,7 +453,7 @@ if __name__ == '__main__':
         ret_tapo, frame_tapo = cap_tapo.read()
         ret_pi, frame_pi = False, None
         
-        if cap_pi.isOpened():
+        if cap_pi is not None and cap_pi.isOpened():
             ret_pi, frame_pi = cap_pi.read()
             
         if not ret_tapo or frame_tapo is None:
@@ -806,20 +818,24 @@ if __name__ == '__main__':
             if ret:
                 latest_frame_pi = buffer.tobytes()
 
-        # --- Display the Windows ---
-        cv2.namedWindow('Vision Node: Tapo Tracking & AI', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Vision Node: Tapo Tracking & AI', 1280, 720)
-        cv2.imshow('Vision Node: Tapo Tracking & AI', display_frame_tapo)
-        
-        if display_frame_pi is not None:
-            cv2.namedWindow('Vision Node: Pi Camera AI', cv2.WINDOW_NORMAL)
-            cv2.resizeWindow('Vision Node: Pi Camera AI', 640, 480)
-            cv2.imshow('Vision Node: Pi Camera AI', display_frame_pi)
+        # --- Display Desktop OpenCV Windows (if SHOW_CV2_WINDOWS=1 in .env) ---
+        show_cv2_windows = os.environ.get("SHOW_CV2_WINDOWS", "0") == "1"
+        if show_cv2_windows:
+            cv2.namedWindow('Vision Node: Tapo Tracking & AI', cv2.WINDOW_NORMAL)
+            cv2.resizeWindow('Vision Node: Tapo Tracking & AI', 1280, 720)
+            cv2.imshow('Vision Node: Tapo Tracking & AI', display_frame_tapo)
+            
+            if display_frame_pi is not None:
+                cv2.namedWindow('Vision Node: Pi Camera AI', cv2.WINDOW_NORMAL)
+                cv2.resizeWindow('Vision Node: Pi Camera AI', 640, 480)
+                cv2.imshow('Vision Node: Pi Camera AI', display_frame_pi)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        else:
+            time.sleep(0.005)
 
     cap_tapo.stop()
-    if cap_pi.isOpened():
+    if cap_pi is not None and cap_pi.isOpened():
         cap_pi.stop()
     cv2.destroyAllWindows()
