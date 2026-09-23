@@ -24,12 +24,12 @@ class MotorController(Node):
         self.hardware_available = False
         try:
             from gpiozero import PWMOutputDevice
-            self.left_fwd = PWMOutputDevice(17)
-            self.left_rev = PWMOutputDevice(27)
-            self.right_fwd = PWMOutputDevice(25)
-            self.right_rev = PWMOutputDevice(23)
+            self.left_fwd = PWMOutputDevice(17, frequency=200)
+            self.left_rev = PWMOutputDevice(27, frequency=200)
+            self.right_fwd = PWMOutputDevice(25, frequency=200)
+            self.right_rev = PWMOutputDevice(23, frequency=200)
             self.hardware_available = True
-            self.get_logger().info("BTS7960 Motor Driver GPIO pins initialized.")
+            self.get_logger().info("BTS7960 Motor Driver GPIO pins initialized at 200 Hz.")
         except Exception as e:
             self.get_logger().warn(f"Hardware GPIO not available for motors (simulation/headless mode): {e}")
             self.left_fwd = None
@@ -38,11 +38,11 @@ class MotorController(Node):
             self.right_rev = None
         
         # Acceleration / Smoothing Configuration
-        # Soft ramp-up protects hardware mounting; clean decel provides responsive stopping
-        self.linear_step = 0.03       # 0.6 m/s^2 smooth ramp up (no component displacement)
-        self.linear_decel_step = 0.08 # Clean, prompt deceleration
-        self.angular_step = 0.08      # Smooth yaw acceleration (no whipping)
-        self.angular_decel_step = 0.16
+        # Punchy, fast response for teleoperation (reaches full 100% speed in 0.25s)
+        self.linear_step = 0.15       # Fast, responsive ramp-up
+        self.linear_decel_step = 0.25 # Clean, prompt stopping
+        self.angular_step = 0.30      # Responsive turning acceleration
+        self.angular_decel_step = 0.45
         
         self.target_linear = 0.0
         self.current_linear = 0.0
@@ -64,7 +64,7 @@ class MotorController(Node):
         
         # Direct MQTT Hardware E-Stop Interlock & Speed Limiter
         self.e_stop_latched = False
-        self.speed_scale = 0.65 # Default Normal (0.35 for CRAWL, 0.65 for NORM, 1.0 for FAST)
+        self.speed_scale = 1.00 # Default Full Power (1.00 for full authority, modulated by teleop)
         try:
             import paho.mqtt.client as mqtt
             import os
@@ -77,22 +77,30 @@ class MotorController(Node):
                 client.subscribe("phoenix/cmd/move")
                 client.subscribe("phoenix/estop")
                 client.subscribe("phoenix/cmd/speed")
+                client.subscribe("phoenix/mode")
                 client.subscribe("ambers/robot/navigation/cancel")
                 
             def on_mqtt_message(client, userdata, msg):
                 payload_str = msg.payload.decode().strip()
                 
-                # Dynamic speed cap across both manual and Nav2 navigation
+                # Mode Isolation: Autonomous mode (Nav2) operates independently
+                if msg.topic == "phoenix/mode":
+                    if payload_str.upper() == "AUTO":
+                        self.speed_scale = 1.00 # Restore full authority to Nav2
+                        self.get_logger().info("Mode set to AUTO: Nav2 controller operates with full velocity range.")
+                    return
+
+                # Dynamic speed cap for MANUAL teleoperation
                 if msg.topic == "phoenix/cmd/speed":
                     try:
                         val = float(payload_str)
                         if val <= 0.20:
-                            self.speed_scale = 0.35 # CRAWL: physical 35% power ceiling
+                            self.speed_scale = 0.35 # CRAWL: precision 35% power ceiling
                         elif val <= 0.50:
-                            self.speed_scale = 0.65 # NORM: 65% power ceiling
+                            self.speed_scale = 0.65 # NORM: 65% cruising power ceiling
                         else:
-                            self.speed_scale = 1.00 # FAST: 100% full sprint
-                        self.get_logger().info(f"⚡ Hardware speed ceiling updated to: {self.speed_scale:.2f}")
+                            self.speed_scale = 1.00 # FAST (MAX): 100% full maximum physical sprint
+                        self.get_logger().info(f"⚡ Manual hardware speed ceiling updated to: {self.speed_scale:.2f} ({'MAX' if self.speed_scale == 1.0 else ''})")
                     except ValueError:
                         pass
                     return
@@ -125,6 +133,9 @@ class MotorController(Node):
     def approach_target(self, current, target, accel_step, decel_step):
         # Differentiate between speeding up vs slowing down
         is_decelerating = (current > 0 and target < current) or (current < 0 and target > current) or (target == 0.0)
+        # In FAST sprint mode, provide instant throttle response
+        if not is_decelerating and self.speed_scale >= 1.0:
+            accel_step = max(accel_step, 0.25)
         step = decel_step if is_decelerating else accel_step
 
         if current < target:
@@ -136,12 +147,8 @@ class MotorController(Node):
     def set_motor(self, fwd_pin, rev_pin, speed):
         if not self.hardware_available or fwd_pin is None or rev_pin is None:
             return
-        # Apply hardware speed cap (CRAWL / NORM / FAST)
-        speed = speed * self.speed_scale
-        # Cap at 95% PWM (0.95) instead of 100% (1.0). 
-        # High-power BTS7960 motor drivers use bootstrap capacitors for their MOSFETs. 
-        # If driven at exactly 100% duty cycle, the capacitor discharges and the motor stalls/whines!
-        speed = max(min(speed, 0.95), -0.95) 
+        # Direct, unthrottled 0.0 to 1.0 PWM output for BTS7960 (100% full battery voltage)
+        speed = max(min(speed, 1.00), -1.00) 
         if speed > 0:
             fwd_pin.value = speed
             rev_pin.value = 0.0
@@ -256,9 +263,9 @@ class MotorController(Node):
         def apply_deadband(spd, deadband=0.16):
             if abs(spd) < 0.02: return 0.0
             sign = 1.0 if spd > 0 else -1.0
-            # Scale from 16% up to 95% so CRAWL (0.15m/s) creeps gently and FAST (0.80m/s) sprints powerfully
+            # Scale from deadband (16%) up to 100% full battery voltage (1.00)
             mag = min(max((abs(spd) - 0.02) / 0.98, 0.0), 1.0)
-            return sign * (deadband + mag * (0.95 - deadband))
+            return sign * (deadband + mag * (1.00 - deadband))
             
         left_speed = apply_deadband(left_speed)
         right_speed = apply_deadband(right_speed)

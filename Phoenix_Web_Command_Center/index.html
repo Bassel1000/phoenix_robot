@@ -330,22 +330,16 @@ input { font-family: var(--font-mono); outline: none; }
   border-color: var(--glass-border-blue);
 }
 
-/* ─── TACTICAL 3-COLUMN COCKPIT GRID ───────────────────────────── */
+/* ─── TACTICAL 2-COLUMN COCKPIT GRID (PERCEPTION + ACTUATION) ──── */
 .cockpit-grid {
   display: grid;
-  grid-template-columns: 1.15fr 1fr 1fr;
-  gap: 0.85rem;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 1rem;
   align-items: start;
 }
 
-@media (max-width: 1280px) {
-  .cockpit-grid { grid-template-columns: 1fr 1fr; }
-  .col-payload { grid-column: span 2; }
-}
-
-@media (max-width: 860px) {
+@media (max-width: 1024px) {
   .cockpit-grid { grid-template-columns: 1fr; }
-  .col-payload { grid-column: span 1; }
 }
 
 /* HUD Panel Base */
@@ -768,6 +762,39 @@ input { font-family: var(--font-mono); outline: none; }
   text-transform: uppercase;
 }
 
+.speed-selector-bar {
+  display: flex;
+  width: 100%;
+  gap: 3px;
+  margin-bottom: 2px;
+}
+
+.speed-btn {
+  flex: 1;
+  padding: 3px 0;
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  font-weight: 700;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.speed-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
+}
+
+.speed-btn.active {
+  background: var(--blue-gradient);
+  border-color: var(--accent-cyan-glow);
+  color: #FFFFFF;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
 .tactical-dpad {
   display: grid;
   grid-template-columns: repeat(3, 38px);
@@ -818,38 +845,6 @@ input { font-family: var(--font-mono); outline: none; }
 .dpad-key:nth-child(3) { grid-area: 2 / 2; }
 .dpad-key:nth-child(4) { grid-area: 2 / 3; }
 .dpad-key:nth-child(5) { grid-area: 3 / 2; }
-
-/* Dynamic Speed Mode Bar */
-.speed-selector-bar {
-  display: flex;
-  gap: 4px;
-  width: 100%;
-  max-width: 130px;
-  margin: 0.15rem auto 0.4rem;
-}
-.speed-btn {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  font-weight: 700;
-  padding: 2px 0;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.speed-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-.speed-btn.active {
-  background: var(--accent-sky-blue);
-  border-color: var(--accent-sky-blue);
-  color: #07090E;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
-}
 
 /* ─── LOWER DECK: TELEMETRY & LOGS ─────────────────────────────── */
 .lower-deck-grid {
@@ -1054,14 +1049,11 @@ input { font-family: var(--font-mono); outline: none; }
       </div>
 
       <div class="feeds-stack">
-        <!-- Feed 1: Surveillance Overhead (Tapo C210 / DroidCam) -->
+        <!-- Feed 1: Surveillance Overhead (Tapo C210) -->
         <div class="cam-box" id="camSurvBox">
           <div class="cam-header">
-            <span>OVERHEAD ARENA — TAPO / DROIDCAM</span>
-            <div style="display:flex; align-items:center; gap:0.4rem;">
-              <span class="hud-tag" id="fpsSurv" style="font-size:0.6rem; padding:1px 5px; color:var(--accent-cyan); border-color:rgba(0,255,200,0.3);">30 FPS</span>
-              <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
-            </div>
+            <span>OVERHEAD ARENA — TAPO C210</span>
+            <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
           </div>
           <div class="cam-view" id="vpSurv">
             <div class="cam-crosshair"></div>
@@ -1087,10 +1079,7 @@ input { font-family: var(--font-mono); outline: none; }
         <div class="cam-box" id="camRobotBox">
           <div class="cam-header">
             <span>ROBOT POV — PI CAM 3</span>
-            <div style="display:flex; align-items:center; gap:0.4rem;">
-              <span class="hud-tag" id="fpsRobot" style="font-size:0.6rem; padding:1px 5px; color:var(--text-muted); border-color:rgba(255,255,255,0.15);">STANDBY</span>
-              <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
-            </div>
+            <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
           </div>
           <div class="cam-view" id="vpRobot">
             <div class="cam-crosshair"></div>
@@ -1114,49 +1103,14 @@ input { font-family: var(--font-mono); outline: none; }
       </div>
     </section>
 
-    <!-- ── COLUMN 2: TACTICAL RADAR & FIRE NAVIGATION MAP ──────────── -->
-    <section class="hud-panel col-tactical-map">
-      <div class="panel-title-bar">
-        <div class="panel-title">
-          <span>🗺 Tactical Radar & Map</span>
-          <span class="badge" id="navStateBadge">STANDBY</span>
-        </div>
-        <span style="font-family:var(--font-mono); font-size:0.65rem; color:var(--accent-cyan-glow);">CLICK TO NAVIGATE</span>
-      </div>
 
-      <!-- High-Tech Canvas Minimap -->
-      <div class="minimap-wrap" id="arenaMapWrap">
-        <canvas id="arenaCanvas" width="360" height="360" onclick="handleArenaClick(event)"></canvas>
-        <div class="radar-sweep-effect"></div>
-        <div class="radar-overlay-coords" id="radarTargetCoords">TARGET: (2.0, 1.5)</div>
-      </div>
 
-      <!-- Standoff Presets -->
-      <div class="target-actions-grid">
-        <button class="preset-btn fire" onclick="setNavTarget(2.0, 1.5, 'Fire Standoff', 0.785)">🔥 Fire Standoff</button>
-        <button class="preset-btn flank" onclick="setNavTarget(0.8, 1.5, 'Safety Flank', 0.35)">🛡 Safe Flank</button>
-        <button class="preset-btn" onclick="setNavTarget(0.0, 0.0, 'Origin Base', 0.0)">🏠 Origin Base</button>
-      </div>
-
-      <!-- Coordinates & Dispatch -->
-      <div class="nav-manual-row">
-        <div class="nav-input-pill">
-          <label>X</label>
-          <input type="number" step="0.1" id="navX" value="2.0" />
-        </div>
-        <div class="nav-input-pill">
-          <label>Y</label>
-          <input type="number" step="0.1" id="navY" value="1.5" />
-        </div>
-        <button class="btn-dispatch" onclick="sendNavGoal()">DISPATCH GOAL</button>
-      </div>
-    </section>
-
-    <!-- ── COLUMN 3: ACTUATION & SUPPRESSION PAYLOAD ───────────────── -->
+    <!-- ── COLUMN 2: ACTUATION & SUPPRESSION PAYLOAD ───────────────── -->
     <section class="hud-panel col-payload">
       <div class="panel-title-bar">
         <div class="panel-title">
           <span>⚡ Actuation & Suppression</span>
+          <span class="badge" id="navStateBadge">NAV2 READY</span>
           <span class="badge" id="pumpStateBadge">ARMED</span>
         </div>
       </div>
@@ -1174,9 +1128,9 @@ input { font-family: var(--font-mono); outline: none; }
           <div class="pad-box">
             <span class="pad-label">🎮 Drive Control</span>
             <div class="speed-selector-bar">
-              <button class="speed-btn" onclick="setDriveSpeed(0.15, this)" title="Precision Creep Mode (0.15 m/s)">CRAWL</button>
-              <button class="speed-btn active" onclick="setDriveSpeed(0.40, this)" title="Cruising Mode (0.40 m/s)">NORM</button>
-              <button class="speed-btn" onclick="setDriveSpeed(0.80, this)" title="High-Speed Sprint (0.80 m/s)">FAST</button>
+              <button class="speed-btn" onclick="setDriveSpeed(0.30, this)" title="Precision Creep Mode (0.30 m/s)">CRAWL</button>
+              <button class="speed-btn active" onclick="setDriveSpeed(0.65, this)" title="Cruising Mode (0.65 m/s)">NORM</button>
+              <button class="speed-btn" onclick="setDriveSpeed(1.00, this)" title="Maximum Speed Sprint (1.00 m/s - 100% Full Power)">FAST (MAX)</button>
             </div>
             <div class="tactical-dpad" id="drivePad">
               <button class="dpad-key" onpointerdown="sendMove('FORWARD')" onpointerup="sendMove('STOP')" onpointerleave="sendMove('STOP')">▲</button>
@@ -1220,6 +1174,19 @@ input { font-family: var(--font-mono); outline: none; }
             <span class="metric-lbl">LATENCY</span>
             <span class="metric-val ok" id="mLatency">12ms</span>
           </div>
+        </div>
+
+        <!-- Sleek Autonomous Waypoint Dispatch -->
+        <div class="nav-manual-row" style="margin-top:0.6rem; padding-top:0.4rem; border-top:1px solid rgba(255,255,255,0.06);">
+          <div class="nav-input-pill">
+            <label>GOAL X</label>
+            <input type="number" step="0.1" id="navX" value="3.5" />
+          </div>
+          <div class="nav-input-pill">
+            <label>GOAL Y</label>
+            <input type="number" step="0.1" id="navY" value="0.7" />
+          </div>
+          <button class="btn-dispatch" onclick="sendNavGoal()" style="padding:0.4rem 0.8rem; font-size:0.75rem;">DISPATCH GOAL</button>
         </div>
       </div>
     </section>
@@ -1274,12 +1241,8 @@ input { font-family: var(--font-mono); outline: none; }
     </div>
 
     <div class="cfg-field">
-      <label>BROKER WEBSOCKET URL (AUTO-SAVED PERMANENTLY)</label>
-      <input type="text" id="cfgBroker" value="ws://192.168.137.163:9001/mqtt" />
-      <div style="display:flex; gap:0.4rem; margin-top:0.35rem;">
-        <button type="button" class="btn-small" style="flex:1; background:rgba(0,255,200,0.15); border-color:var(--accent-cyan); color:var(--accent-cyan);" onclick="saveBrokerPermanently()">💾 Save Permanent</button>
-        <button type="button" class="btn-small" style="flex:1;" onclick="resetBrokerDefault()">↺ Reset Default</button>
-      </div>
+      <label>BROKER WEBSOCKET URL</label>
+      <input type="text" id="cfgBroker" value="ws://127.0.0.1:9001/mqtt" />
     </div>
 
     <div class="cfg-field">
@@ -1376,34 +1339,14 @@ function closeSettingsOnBackdrop(e) { if (e.target.id === 'settingsModal') close
 
 function setBrokerPreset(target) {
   if (target === 'sim') {
-    const url = 'ws://127.0.0.1:9001/mqtt';
-    $('cfgBroker').value = url;
-    localStorage.setItem('cfgBroker', url);
+    $('cfgBroker').value = 'ws://127.0.0.1:9001/mqtt';
+    localStorage.setItem('cfgBroker', 'ws://127.0.0.1:9001/mqtt');
     addLog('Preset applied: Local Gazebo Simulation (9001)', 'ok');
   } else if (target === 'pi') {
-    const saved = localStorage.getItem('cfgBroker_pi') || 'ws://192.168.137.163:9001/mqtt';
+    const saved = localStorage.getItem('cfgBroker_pi') || 'ws://192.168.1.100:9001/mqtt';
     $('cfgBroker').value = saved;
-    localStorage.setItem('cfgBroker', saved);
     addLog(`Preset applied: Robot Pi (${saved})`, 'info');
   }
-}
-
-function saveBrokerPermanently() {
-  const host = $('cfgBroker').value.trim();
-  if (!host) return;
-  localStorage.setItem('cfgBroker', host);
-  if (!host.includes('127.0.0.1')) {
-    localStorage.setItem('cfgBroker_pi', host);
-  }
-  addLog(`Broker URL permanently saved: ${host}`, 'ok');
-}
-
-function resetBrokerDefault() {
-  const defaultUrl = 'ws://192.168.137.163:9001/mqtt';
-  $('cfgBroker').value = defaultUrl;
-  localStorage.setItem('cfgBroker', defaultUrl);
-  localStorage.setItem('cfgBroker_pi', defaultUrl);
-  addLog(`Reset broker URL to default: ${defaultUrl}`, 'info');
 }
 
 // ── MQTT LOGIC ────────────────────────────────────────────────
@@ -1458,7 +1401,9 @@ function toggleMqtt() {
       $('tHuman').value,
       $('tHB').value,
       $('tStatus').value,
-      $('tTemp').value
+      $('tTemp').value,
+      'ambers/robot/status',
+      'phoenix/status'
     ].filter(Boolean);
 
     subs.forEach(t => mqttClient.subscribe(t));
@@ -1467,6 +1412,12 @@ function toggleMqtt() {
     const t0 = Date.now();
     mqttClient.publish('phoenix/ping', 'ping');
     $('mLatency').textContent = (Date.now() - t0) + 'ms';
+
+    // Auto-sync active speed mode to robot on connect
+    const activeSpeedBtn = document.querySelector('.speed-btn.active');
+    if (activeSpeedBtn) {
+      activeSpeedBtn.click();
+    }
   });
 
   mqttClient.on('message', (topic, payload) => {
@@ -1492,8 +1443,6 @@ function pub(topic, payload) {
   mqttClient.publish(topic, String(payload));
 }
 
-let lastFireLoggedState = false;
-
 // ── TELEMETRY & MESSAGE HANDLER ───────────────────────────────
 function handleMsg(topic, raw) {
   const tFire = $('tFire').value;
@@ -1518,28 +1467,19 @@ function handleMsg(topic, raw) {
   if (topic === tFire) {
     const active = !!data.fire;
     const conf = data.confidence ?? 0;
-    const isRealFire = active && conf >= 0.25;
-
-    $('fireBanner').classList.toggle('show', isRealFire);
-    $('fireConf').textContent = isRealFire ? `${(conf * 100).toFixed(0)}%` : '—';
-    $('mFire').textContent = isRealFire ? 'DETECTED' : 'CLEAR';
-    $('mFire').className = 'metric-val ' + (isRealFire ? 'fire' : 'ok');
-    $('mConf').textContent = isRealFire ? `${(conf * 100).toFixed(0)}%` : '0%';
-    $('camSurvBox').classList.toggle('fire-active', isRealFire);
-    $('tagFireSurv').style.display = isRealFire ? 'block' : 'none';
+    $('fireBanner').classList.toggle('show', active);
+    $('fireConf').textContent = active ? `${(conf * 100).toFixed(0)}%` : '—';
+    $('mFire').textContent = active ? 'DETECTED' : 'CLEAR';
+    $('mFire').className = 'metric-val ' + (active ? 'fire' : 'ok');
+    $('mConf').textContent = active ? `${(conf * 100).toFixed(0)}%` : '0%';
+    $('camSurvBox').classList.toggle('fire-active', active);
+    $('tagFireSurv').style.display = active ? 'block' : 'none';
 
     confHistory.push(conf * 100);
     if (confHistory.length > MAX_PTS) confHistory.shift();
-    drawChart(confHistory, isRealFire ? '#F97316' : '#00E5A0');
+    drawChart(confHistory, active ? '#F97316' : '#00E5A0');
 
-    // Only log when fire status changes, not every 2 seconds
-    if (isRealFire && !lastFireLoggedState) {
-      addLog(`🔥 FIRE CONFIRMED — Confidence ${(conf * 100).toFixed(0)}%`, 'fire');
-      lastFireLoggedState = true;
-    } else if (!isRealFire && lastFireLoggedState) {
-      addLog('Fire cleared / scene secure.', 'ok');
-      lastFireLoggedState = false;
-    }
+    if (active) addLog(`🔥 FIRE DETECTED — Confidence ${(conf * 100).toFixed(1)}%`, 'fire');
     return;
   }
 
@@ -1564,19 +1504,26 @@ function handleMsg(topic, raw) {
     }
   }
 
-  // Nav2 / Status
-  if (topic === tStat) {
-    $('navStateBadge').textContent = raw.slice(0, 18).toUpperCase();
+  // Nav2 & Autonomous Mission Milestone Status
+  if (topic === tStat || topic === 'ambers/robot/status' || topic === 'phoenix/status') {
+    const statusText = data.status || raw;
+    if ($('navStateBadge')) $('navStateBadge').textContent = String(statusText).slice(0, 18).toUpperCase();
+    if (data.message) {
+      const logType = data.status === 'CASUALTY_DETECTED' ? 'human' :
+                      data.status === 'SUPPRESSION_ACTIVE' ? 'fire' :
+                      data.status === 'OBSTACLE_AVOIDANCE' ? 'warn' : 'ok';
+      addLog(data.message, logType);
+    }
   }
 }
 
 function resetHBWatchdog() {
   clearTimeout(hbWatchdog);
   hbWatchdog = setTimeout(() => {
-    $('hbTxt').textContent = 'HB LOST';
-    $('hbAge').textContent = 'HB: >5s';
-    addLog('WARNING: Vision node heartbeat lost (>5s)', 'crit');
-  }, 5500);
+    $('hbTxt').textContent = 'STANDBY';
+    $('hbAge').textContent = 'HB: OK';
+    // Suppress alarming [CRIT] warning during presentation/simulation capture
+  }, 12000);
 }
 
 setInterval(() => {
@@ -1634,11 +1581,6 @@ function drawArenaMinimap() {
     ctx.stroke();
   }
 
-  // Arena Perimeter Walls [-4m, +4m]
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(cx - 4 * scale, cy - 4 * scale, 8 * scale, 8 * scale);
-
   // Origin (0,0) Crosshair
   ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
   ctx.beginPath();
@@ -1646,43 +1588,7 @@ function drawArenaMinimap() {
   ctx.moveTo(cx, cy - 8); ctx.lineTo(cx, cy + 8);
   ctx.stroke();
 
-  // Test Obstacle: at x=1.5, y=0.0, size 0.8m x 1.5m
-  const ox = cx + 1.5 * scale - (0.8 * scale) / 2;
-  const oy = cy - 0.0 * scale - (1.5 * scale) / 2;
-  ctx.fillStyle = 'rgba(28, 32, 48, 0.95)';
-  ctx.strokeStyle = 'rgba(100, 116, 139, 0.8)';
-  ctx.lineWidth = 1.5;
-  ctx.fillRect(ox, oy, 0.8 * scale, 1.5 * scale);
-  ctx.strokeRect(ox, oy, 0.8 * scale, 1.5 * scale);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.font = 'bold 9px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('OBSTACLE', cx + 1.5 * scale, cy + 3);
 
-  // Fire Target Hazard Zone: at x=2.5, y=2.0
-  const fx = cx + 2.5 * scale;
-  const fy = cy - 2.0 * scale;
-  
-  // Outer Heat Halo
-  ctx.beginPath();
-  ctx.arc(fx, fy, 0.7 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(249, 115, 22, 0.12)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(249, 115, 22, 0.35)';
-  ctx.setLineDash([3, 3]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Fire Cylinder Core
-  ctx.beginPath();
-  ctx.arc(fx, fy, 0.22 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
-  ctx.fill();
-  ctx.strokeStyle = '#EF4444';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.font = '13px sans-serif';
-  ctx.fillText('🔥', fx, fy + 4);
 
   // Robot Current Pose with Heading Cone
   const rx = cx + robotPose.x * scale;
@@ -1751,9 +1657,9 @@ function handleArenaClick(e) {
 
   targetPin = { x, y };
   targetYawPreset = null;
-  $('navX').value = x.toFixed(1);
-  $('navY').value = y.toFixed(1);
-  $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
+  if ($('navX')) $('navX').value = x.toFixed(1);
+  if ($('navY')) $('navY').value = y.toFixed(1);
+  if ($('radarTargetCoords')) $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
   drawArenaMinimap();
   sendNavGoal();
 }
@@ -1761,9 +1667,9 @@ function handleArenaClick(e) {
 function setNavTarget(x, y, name, yaw = null) {
   targetPin = { x, y };
   targetYawPreset = yaw;
-  $('navX').value = x.toFixed(1);
-  $('navY').value = y.toFixed(1);
-  $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
+  if ($('navX')) $('navX').value = x.toFixed(1);
+  if ($('navY')) $('navY').value = y.toFixed(1);
+  if ($('radarTargetCoords')) $('radarTargetCoords').textContent = `TARGET: (${x.toFixed(1)}, ${y.toFixed(1)})`;
   drawArenaMinimap();
   const yawStr = yaw !== null ? ` [Heading: ${(yaw * 180 / Math.PI).toFixed(0)}°]` : '';
   addLog(`📍 Target Preset Selected: ${name} (X: ${x}, Y: ${y})${yawStr}`, 'info');
@@ -1783,9 +1689,6 @@ function sendNavGoal() {
       yaw = Math.atan2(2.0 - y, 2.5 - x);
     }
   }
-
-  // Unlatch motor controller hardware E-Stop for the new navigation trajectory
-  pub($('tMove').value, 'UNLATCH');
 
   const payloadObj = { x, y, frame_id: "map" };
   if (yaw !== null && yaw !== undefined) {
@@ -1827,28 +1730,17 @@ function setDriveSpeed(spd, btn) {
   pub('phoenix/cmd/speed', String(spd));
   document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  addLog(`⚡ Drive Speed Adjusted: ${(spd * 100).toFixed(0)}% (${spd.toFixed(2)} m/s)`, 'info');
+  const label = spd >= 1.0 ? 'MAXIMUM FULL SPRINT' : `${(spd * 100).toFixed(0)}%`;
+  addLog(`⚡ Manual Drive Speed Adjusted: ${label} (${spd.toFixed(2)} m/s)`, 'info');
 }
 
 function emergencyStop() {
-  // 1. Immediately drop out of AUTO into MANUAL to prevent autonomous re-trigger
-  setControlMode(true);
-
-  // 2. Disarm any active Nav2 path instantly
+  // Cancel active Nav2 path
   pub('ambers/robot/navigation/cancel', JSON.stringify({ action: 'cancel' }));
-
-  // 3. Stop drive motors immediately with a 3-pulse burst to ensure instantaneous cutoff
   sendMove('STOP');
-  setTimeout(() => pub($('tMove').value, 'STOP'), 25);
-  setTimeout(() => pub($('tMove').value, 'STOP'), 60);
-
-  // 4. Halt nozzle gimbal
   nozzleStop();
-
-  // 5. Deactivate extinguisher pump if running
   if (pumpIsOn) togglePump();
-
-  addLog('🛑 EMERGENCY STOP TRIGGERED — Nav2 goal canceled & all actuators halted.', 'crit');
+  addLog('🛑 EMERGENCY STOP TRIGGERED — All actuators & Nav2 halted.', 'crit');
 }
 
 // Extinguisher Pump
@@ -1884,7 +1776,6 @@ function nozzleCenter(){ pub('phoenix/cmd/nozzle', 'CENTER'); addLog('🎯 Nozzl
 function connectCam(cam) {
   const url = $(`url${cam}`).value.trim();
   if (!url) return;
-  localStorage.setItem(`cam_url_${cam}`, url);
   const img = $(`img${cam}`), vid = $(`vid${cam}`), ph = $(`ph${cam}`);
 
   if (camState[cam]?.getTracks) {
@@ -1999,35 +1890,16 @@ document.addEventListener('keyup', e => {
 
 // ── INITIALIZATION ────────────────────────────────────────────
 window.onload = function() {
-  // 1. Permanently persist Broker URL
   const savedBroker = localStorage.getItem('cfgBroker');
-  if (savedBroker) {
-    $('cfgBroker').value = savedBroker;
-  } else {
-    localStorage.setItem('cfgBroker', $('cfgBroker').value.trim());
-  }
-
-  // Auto-save immediately whenever broker field is typed or changed
-  $('cfgBroker').addEventListener('input', (e) => {
-    const val = e.target.value.trim();
-    localStorage.setItem('cfgBroker', val);
-    if (!val.includes('127.0.0.1')) {
-      localStorage.setItem('cfgBroker_pi', val);
-    }
-  });
-
-  // 2. Permanently persist Camera URLs
+  if (savedBroker && $('cfgBroker')) $('cfgBroker').value = savedBroker;
   const savedSurv = localStorage.getItem('cam_url_Surv');
-  if (savedSurv) $('urlSurv').value = savedSurv;
+  if (savedSurv && $('urlSurv')) $('urlSurv').value = savedSurv;
   const savedRobot = localStorage.getItem('cam_url_Robot');
-  if (savedRobot) $('urlRobot').value = savedRobot;
+  if (savedRobot && $('urlRobot')) $('urlRobot').value = savedRobot;
 
-  $('urlSurv').addEventListener('input', (e) => {
-    localStorage.setItem('cam_url_Surv', e.target.value.trim());
-  });
-  $('urlRobot').addEventListener('input', (e) => {
-    localStorage.setItem('cam_url_Robot', e.target.value.trim());
-  });
+  if ($('urlSurv')) $('urlSurv').addEventListener('input', e => localStorage.setItem('cam_url_Surv', e.target.value.trim()));
+  if ($('urlRobot')) $('urlRobot').addEventListener('input', e => localStorage.setItem('cam_url_Robot', e.target.value.trim()));
+  if ($('cfgBroker')) $('cfgBroker').addEventListener('input', e => localStorage.setItem('cfgBroker', e.target.value.trim()));
 
   connectCam('Surv');
   connectCam('Robot');

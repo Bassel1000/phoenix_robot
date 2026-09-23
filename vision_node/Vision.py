@@ -233,6 +233,7 @@ class TCPCameraStream:
     def __init__(self, src):
         import urllib.parse
         import socket
+        src = str(src).strip().strip('"').strip("'")
         parsed = urllib.parse.urlparse(src)
         self.host = parsed.hostname
         self.port = parsed.port
@@ -247,7 +248,7 @@ class TCPCameraStream:
             self.sock.settimeout(2.0)
             self._is_opened = True
         except Exception as e:
-            print(f"TCPCameraStream failed to connect to {src}: {e}")
+            print(f"TCPCameraStream failed to connect to {self.host}:{self.port} ({src}): {e}")
             self._is_opened = False
             self.sock = None
 
@@ -400,6 +401,7 @@ if __name__ == '__main__':
     pi_camera_url = os.environ.get("PI_CAMERA_URL")
     cap_pi = None
     if pi_camera_url and pi_camera_url.strip():
+        pi_camera_url = pi_camera_url.strip().strip('"').strip("'")
         if pi_camera_url.startswith("tcp://"):
             print(f"Using TCPCameraStream for {pi_camera_url}...")
             cap_pi = TCPCameraStream(pi_camera_url).start()

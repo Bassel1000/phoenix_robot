@@ -14,8 +14,8 @@ class MqttMotorBridge(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         
         # Speed configuration (parameterized for smooth, stable teleoperation)
-        self.declare_parameter('linear_speed', 0.35)
-        self.declare_parameter('angular_speed', 0.90)
+        self.declare_parameter('linear_speed', 0.65)
+        self.declare_parameter('angular_speed', 3.50)
         self.linear_speed = float(self.get_parameter('linear_speed').value)
         self.angular_speed = float(self.get_parameter('angular_speed').value)
         
@@ -50,14 +50,16 @@ class MqttMotorBridge(Node):
     def on_mqtt_message(self, client, userdata, msg):
         payload_str = msg.payload.decode().strip()
         
-        # Dynamic speed adjustment from Web UI
+        # Dynamic speed adjustment from Web UI (MANUAL Mode)
         if msg.topic == "phoenix/cmd/speed":
             try:
                 new_speed = float(payload_str)
                 if 0.1 <= new_speed <= 1.0:
                     self.linear_speed = new_speed
-                    self.angular_speed = min(new_speed * 2.5, 1.8)
-                    self.get_logger().info(f"Updated teleop speed: linear={self.linear_speed:.2f} m/s, angular={self.angular_speed:.2f} rad/s")
+                    # Skid-steer kinematics: wheel_speed = angular * B / 2 = angular * 0.175
+                    # Scale angular speed proportionally so turning matches linear drive authority
+                    self.angular_speed = min(new_speed * 5.0, 5.0)
+                    self.get_logger().info(f"Updated manual teleop speed: linear={self.linear_speed:.2f} m/s, angular={self.angular_speed:.2f} rad/s")
             except ValueError:
                 pass
             return
