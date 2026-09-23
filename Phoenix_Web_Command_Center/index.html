@@ -1174,9 +1174,9 @@ input { font-family: var(--font-mono); outline: none; }
           <div class="pad-box">
             <span class="pad-label">🎮 Drive Control</span>
             <div class="speed-selector-bar">
-              <button class="speed-btn" onclick="setDriveSpeed(0.20, this)" title="Crawl mode (0.20 m/s)">CRAWL</button>
-              <button class="speed-btn active" onclick="setDriveSpeed(0.35, this)" title="Smooth normal cruising (0.35 m/s)">NORM</button>
-              <button class="speed-btn" onclick="setDriveSpeed(0.50, this)" title="Fast mode (0.50 m/s)">FAST</button>
+              <button class="speed-btn" onclick="setDriveSpeed(0.15, this)" title="Precision Creep Mode (0.15 m/s)">CRAWL</button>
+              <button class="speed-btn active" onclick="setDriveSpeed(0.40, this)" title="Cruising Mode (0.40 m/s)">NORM</button>
+              <button class="speed-btn" onclick="setDriveSpeed(0.80, this)" title="High-Speed Sprint (0.80 m/s)">FAST</button>
             </div>
             <div class="tactical-dpad" id="drivePad">
               <button class="dpad-key" onpointerdown="sendMove('FORWARD')" onpointerup="sendMove('STOP')" onpointerleave="sendMove('STOP')">▲</button>

@@ -227,11 +227,11 @@ class MotorController(Node):
         right_speed = v_r / V_max
         
         # --- DEADBAND COMPENSATOR ---
-        # Maps requested movement into active motor power band smoothly without sudden jolts
-        def apply_deadband(spd, deadband=0.22):
+        # Maps requested movement into active motor power band with distinct low vs high speed separation
+        def apply_deadband(spd, deadband=0.16):
             if abs(spd) < 0.02: return 0.0
             sign = 1.0 if spd > 0 else -1.0
-            # Scale smoothly from deadband (22%) to 0.95 without abrupt shock
+            # Scale from 16% up to 95% so CRAWL (0.15m/s) creeps gently and FAST (0.80m/s) sprints powerfully
             mag = min(max((abs(spd) - 0.02) / 0.98, 0.0), 1.0)
             return sign * (deadband + mag * (0.95 - deadband))
             
