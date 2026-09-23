@@ -1455,6 +1455,8 @@ function pub(topic, payload) {
   mqttClient.publish(topic, String(payload));
 }
 
+let lastFireLoggedState = false;
+
 // ── TELEMETRY & MESSAGE HANDLER ───────────────────────────────
 function handleMsg(topic, raw) {
   const tFire = $('tFire').value;
@@ -1479,19 +1481,28 @@ function handleMsg(topic, raw) {
   if (topic === tFire) {
     const active = !!data.fire;
     const conf = data.confidence ?? 0;
-    $('fireBanner').classList.toggle('show', active);
-    $('fireConf').textContent = active ? `${(conf * 100).toFixed(0)}%` : '—';
-    $('mFire').textContent = active ? 'DETECTED' : 'CLEAR';
-    $('mFire').className = 'metric-val ' + (active ? 'fire' : 'ok');
-    $('mConf').textContent = active ? `${(conf * 100).toFixed(0)}%` : '0%';
-    $('camSurvBox').classList.toggle('fire-active', active);
-    $('tagFireSurv').style.display = active ? 'block' : 'none';
+    const isRealFire = active && conf >= 0.25;
+
+    $('fireBanner').classList.toggle('show', isRealFire);
+    $('fireConf').textContent = isRealFire ? `${(conf * 100).toFixed(0)}%` : '—';
+    $('mFire').textContent = isRealFire ? 'DETECTED' : 'CLEAR';
+    $('mFire').className = 'metric-val ' + (isRealFire ? 'fire' : 'ok');
+    $('mConf').textContent = isRealFire ? `${(conf * 100).toFixed(0)}%` : '0%';
+    $('camSurvBox').classList.toggle('fire-active', isRealFire);
+    $('tagFireSurv').style.display = isRealFire ? 'block' : 'none';
 
     confHistory.push(conf * 100);
     if (confHistory.length > MAX_PTS) confHistory.shift();
-    drawChart(confHistory, active ? '#F97316' : '#00E5A0');
+    drawChart(confHistory, isRealFire ? '#F97316' : '#00E5A0');
 
-    if (active) addLog(`🔥 FIRE DETECTED — Confidence ${(conf * 100).toFixed(1)}%`, 'fire');
+    // Only log when fire status changes, not every 2 seconds
+    if (isRealFire && !lastFireLoggedState) {
+      addLog(`🔥 FIRE CONFIRMED — Confidence ${(conf * 100).toFixed(0)}%`, 'fire');
+      lastFireLoggedState = true;
+    } else if (!isRealFire && lastFireLoggedState) {
+      addLog('Fire cleared / scene secure.', 'ok');
+      lastFireLoggedState = false;
+    }
     return;
   }
 

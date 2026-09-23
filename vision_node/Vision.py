@@ -577,9 +577,9 @@ if __name__ == '__main__':
             # Tuned for candle flames ONLY (orange-red, NOT golden yellow)
             # Golden KSIU logo on robot: H~25-35 (yellow) — excluded by H<=18 cutoff
             # Candle flame: H~0-18 (orange-red), S>=150 (very saturated), V>=200 (glowing)
-            lower_flame1 = np.array([0, 150, 200], dtype=np.uint8)
-            upper_flame1 = np.array([18, 255, 255], dtype=np.uint8)
-            lower_flame2 = np.array([165, 150, 200], dtype=np.uint8)
+            lower_flame1 = np.array([0, 160, 220], dtype=np.uint8)
+            upper_flame1 = np.array([16, 255, 255], dtype=np.uint8)
+            lower_flame2 = np.array([168, 160, 220], dtype=np.uint8)
             upper_flame2 = np.array([180, 255, 255], dtype=np.uint8)
             
             mask1 = cv2.inRange(hsv, lower_flame1, upper_flame1)
@@ -602,13 +602,11 @@ if __name__ == '__main__':
                 area_ratio = area / frame_area
 
                 # Verify the detected region is actually glowing bright (not just warm-colored)
-                # Extract the V (brightness) channel values inside the contour bounding box
                 roi_v = hsv[y1_hsv:y2_hsv, x1_hsv:x2_hsv, 2]  # V channel
                 if roi_v.size == 0:
                     continue
                 avg_brightness = float(np.mean(roi_v))
-                if avg_brightness < 210:
-                    # Not bright enough to be a flame — skip (floor tiles are ~120-180)
+                if avg_brightness < 225:
                     continue
 
                 if area_ratio > 0.05:
@@ -732,10 +730,9 @@ if __name__ == '__main__':
 
         # 3.2 Latch override and arrival check
         if latched_fire_active:
-            # If we haven't seen any fire in the scene for 15 seconds, clear the latch
-            # Increased from 5.0 to 15.0 for better reliability
-            if current_time - last_fire_detect_time > 15.0:
-                print(f"[LATCH TIMEOUT] No fire detected for 15.0 seconds. Clearing latched target.")
+            # If we haven't seen any fire in the scene for 5.0 seconds, clear the latch
+            if current_time - last_fire_detect_time > 5.0:
+                print(f"[LATCH TIMEOUT] No fire detected for 5.0 seconds. Clearing latched target.")
                 latched_fire_active = False
                 latched_fire_x = None
                 latched_fire_y = None
@@ -745,6 +742,8 @@ if __name__ == '__main__':
                 fire_active = True
                 fire_x_target = latched_fire_x
                 fire_y_target = latched_fire_y
+                if max_conf < 0.3:
+                    max_conf = 0.5  # Retain confidence while latched
                 
                 # Check if the robot has arrived at the safe stopping distance
                 d_safe = 0.3  # Reduced from 0.8m to 0.3m (30cm away) to get closer to the candle
