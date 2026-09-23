@@ -1022,11 +1022,14 @@ input { font-family: var(--font-mono); outline: none; }
       </div>
 
       <div class="feeds-stack">
-        <!-- Feed 1: Surveillance Overhead (Tapo C210) -->
+        <!-- Feed 1: Surveillance Overhead (Tapo C210 / DroidCam) -->
         <div class="cam-box" id="camSurvBox">
           <div class="cam-header">
-            <span>OVERHEAD ARENA — TAPO C210</span>
-            <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
+            <span>OVERHEAD ARENA — TAPO / DROIDCAM</span>
+            <div style="display:flex; align-items:center; gap:0.4rem;">
+              <span class="hud-tag" id="fpsSurv" style="font-size:0.6rem; padding:1px 5px; color:var(--accent-cyan); border-color:rgba(0,255,200,0.3);">30 FPS</span>
+              <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
+            </div>
           </div>
           <div class="cam-view" id="vpSurv">
             <div class="cam-crosshair"></div>
@@ -1052,7 +1055,10 @@ input { font-family: var(--font-mono); outline: none; }
         <div class="cam-box" id="camRobotBox">
           <div class="cam-header">
             <span>ROBOT POV — PI CAM 3</span>
-            <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
+            <div style="display:flex; align-items:center; gap:0.4rem;">
+              <span class="hud-tag" id="fpsRobot" style="font-size:0.6rem; padding:1px 5px; color:var(--text-muted); border-color:rgba(255,255,255,0.15);">STANDBY</span>
+              <div class="rec-indicator"><span class="rec-dot"></span>LIVE</div>
+            </div>
           </div>
           <div class="cam-view" id="vpRobot">
             <div class="cam-crosshair"></div>

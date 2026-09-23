@@ -180,13 +180,7 @@ class CameraStream:
         elif isinstance(src, str) and (src.endswith(('.mp4', '.avi', '.mov', '.mkv', '.png', '.jpg')) or os.path.isfile(src)):
             self.is_file = True
 
-        if isinstance(src, int) and os.name == 'nt':
-            self.stream = cv2.VideoCapture(src, cv2.CAP_DSHOW)
-            if not self.stream.isOpened():
-                self.stream = cv2.VideoCapture(src)
-        else:
-            self.stream = cv2.VideoCapture(src)
-
+        self.stream = cv2.VideoCapture(src)
         if not self.is_file:
             self.stream.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.grabbed, self.frame = self.stream.read()
@@ -452,7 +446,18 @@ if __name__ == '__main__':
 
     print("Starting Robot Tracking and Fire Detection...")
 
+    fps_start_time = time.time()
+    fps_frame_count = 0
+    current_fps = 0.0
+
     while True:
+        # Calculate real-time FPS
+        fps_frame_count += 1
+        fps_elapsed = time.time() - fps_start_time
+        if fps_elapsed >= 0.5:
+            current_fps = fps_frame_count / fps_elapsed
+            fps_frame_count = 0
+            fps_start_time = time.time()
         # STEP A: Send Heartbeat (to keep robot integration watchdog happy)
         current_time = time.time()
         if current_time - last_heartbeat_time > 1.0:
@@ -824,6 +829,21 @@ if __name__ == '__main__':
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 cv2.putText(display_frame_pi, f"Pi Fall: {fall_pi_pred:.2f}", (10, 30), font, 0.8, (0, 0, 255) if fall_pi_pred > 0.5 else (0, 255, 0), 2)
                 cv2.putText(display_frame_pi, f"Pi Human: {human_pi_pred:.2f}", (10, 60), font, 0.8, (255, 0, 0) if human_pi_pred > 0.5 else (0, 255, 0), 2)
+
+        # Draw Real-Time Tactical FPS Badge
+        if display_frame_tapo is not None:
+            w_box = display_frame_tapo.shape[1]
+            fps_text = f"FPS: {current_fps:.1f}"
+            cv2.rectangle(display_frame_tapo, (w_box - 145, 10), (w_box - 10, 42), (10, 14, 20), -1)
+            cv2.rectangle(display_frame_tapo, (w_box - 145, 10), (w_box - 10, 42), (0, 255, 200), 1)
+            cv2.putText(display_frame_tapo, fps_text, (w_box - 135, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 200), 2)
+
+        if display_frame_pi is not None:
+            w_box = display_frame_pi.shape[1]
+            fps_text = f"FPS: {current_fps:.1f}"
+            cv2.rectangle(display_frame_pi, (w_box - 145, 10), (w_box - 10, 42), (10, 14, 20), -1)
+            cv2.rectangle(display_frame_pi, (w_box - 145, 10), (w_box - 10, 42), (0, 255, 200), 1)
+            cv2.putText(display_frame_pi, fps_text, (w_box - 135, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 200), 2)
 
         # Update global frames for Flask stream with low-latency JPEG compression
         if display_frame_tapo is not None:
