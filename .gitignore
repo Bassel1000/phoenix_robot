@@ -38,3 +38,4 @@ vision_node/raspi_inference.py
 
 # Personal / Private competition docs
 docs/COMPETITION_VIDEO_GUIDE.md
+generate_fire_svg.py
