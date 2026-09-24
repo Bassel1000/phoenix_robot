@@ -71,6 +71,12 @@ Send manual velocity command to robot in Gazebo:
 ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.3}, angular: {z: 0.0}}"
 ```
 
+## Fast Navigation Benchmark
+Run the automated Nav2 navigation and velocity benchmark test:
+```bash
+python3 scripts/test_fast_navigation.py
+```
+
 ## MQTT Diagnostics (Simulation & Hardware)
 
 Listen to all robot status and telemetry:

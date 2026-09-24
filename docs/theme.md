@@ -28,11 +28,11 @@
 ## 🦅 Brand Assets & Logos
 
 ### 1. Vector Silhouette Logo
-* **Path:** `assets/phoenix_logo_vector.png` & `Phoenix_Web_Command_Center/images/phoenix_logo_vector.png`
+* **Path:** `assets/phoenix_logo_vector.png` & `assets/phoenix_logo_vector.svg`
 * **Characteristics:** High-contrast geometric vector silhouette with upward wings, diamond head, and stylized flame aperture tail feathers. Used for physical decals, laser etching, documentation, and print materials.
 
 ### 2. Animated Fire Emblem (Cybernetic Glow)
-* **Path:** `assets/phoenix_logo_fire.png` & `Phoenix_Web_Command_Center/images/phoenix_logo_fire.png`
+* **Path:** `assets/phoenix_logo_fire.png` & `assets/phoenix_logo_fire.svg` (active web emblem: `Phoenix_Web_Command_Center/images/phoenix_logo_fire.svg`)
 * **Characteristics:** Radiant flame gradient (Yellow $\to$ Amber $\to$ Orange $\to$ Red) with ambient bloom on obsidian space and floating ember particles. Used in the Web Command Center topbar, digital presentation slides, and web hero sections.
 
 ### 3. Physical System Overview

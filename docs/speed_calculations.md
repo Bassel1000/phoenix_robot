@@ -1,3 +1,5 @@
+# 📐 Speed & Kinematics Calculations
+
 To calculate the actual physical speed of your robot (in meters per second), you need to know three hardware specifications: the **Motor RPM**, the **Wheel Diameter**, and the **Load/Efficiency Drop**. 
 
 Since you are controlling the motors via open-loop PWM (percentages), the speed calculation is theoretical. Here is the step-by-step formula to calculate it:

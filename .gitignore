@@ -27,10 +27,11 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# ROS 2 workspaces
+# ROS 2 workspaces & Logs
 install/
 build/
 log/
+*.log
 
 # Test scripts
 vision_node/test_pi_models_tapo.py
@@ -38,4 +39,8 @@ vision_node/raspi_inference.py
 
 # Personal / Private competition docs
 docs/COMPETITION_VIDEO_GUIDE.md
-generate_fire_svg.py
+REAL_ROBOT_TESTING_GUIDE.md
+
+# Operating System files
+.DS_Store
+Thumbs.db

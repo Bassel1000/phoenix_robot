@@ -34,14 +34,14 @@ Combining an off-board **AI Perception Engine**, an on-board **ROS 2 Navigation 
 ## 🎬 Mission Demonstration
 
 <p align="center">
-  <video src="Phoenix_Demo.mp4" controls="controls" width="100%" style="max-width: 800px; border-radius: 8px;">
-    <source src="Phoenix_Demo.mp4" type="video/mp4">
+  <video src="assets/Phoenix_Demo.mp4" controls="controls" width="100%" style="max-width: 800px; border-radius: 8px;">
+    <source src="assets/Phoenix_Demo.mp4" type="video/mp4">
     Your browser does not support the video tag.
   </video>
 </p>
 
 <p align="center">
-  <a href="Phoenix_Demo.mp4">▶️ <strong>Watch Full Phoenix Demonstration Video (Phoenix_Demo.mp4)</strong></a>
+  <a href="assets/Phoenix_Demo.mp4">▶️ <strong>Watch Full Phoenix Demonstration Video (Phoenix_Demo.mp4)</strong></a>
 </p>
 
 > 📹 **Demonstration Highlights:** Full autonomous emergency response sequence — featuring real-time AI flame detection, fallen casualty localization, dynamic Nav2 obstacle avoidance with RF2O odometry, and 2-DOF precision suppression.
@@ -191,7 +191,7 @@ ros2 launch phoenix_description simulation.launch.py world_type:=datacenter pro_
 * **Phoenix Pro Model:** High-fidelity robot mesh with anodized Deep Crimson livery, Sky-Blue wheels, 2020 aluminum arch, and 2-DOF suppression nozzle.
 * **Fully Integrated:** Bridges LiDAR (`/scan`), odometry (`/odom`), driving (`/cmd_vel`), camera (`/camera/image_raw`), and clock (`/clock`).
 * **Web HUD Ready:** Automatically launches MQTT control bridges (`mqtt_nav_client`, `mqtt_motor_bridge`, `pump_controller`, `nozzle_controller`) with simulation time enabled (`use_sim_time:=True`).
-* **Automated Competition Demo:** See [Phoenix_Demo.mp4](Phoenix_Demo.mp4) for the recorded 6-stage autonomous run executing obstacle avoidance and suppression.
+* **Automated Competition Demo:** See [assets/Phoenix_Demo.mp4](assets/Phoenix_Demo.mp4) for the recorded 6-stage autonomous run executing obstacle avoidance and suppression.
 * **18-Second Nav2 Stabilization:** Nav2 automatically launches 18 seconds after Gazebo to let SLAM Toolbox stabilize the `map -> odom` transform before costmaps activate.
 
 In a second terminal, after sourcing the workspace, dispatch a map-frame goal (or use the Web Command Center D-Pad / Goal sender):
@@ -211,7 +211,7 @@ ros2 run tf2_tools view_frames
 ros2 topic echo /map --once
 ```
 
-> 📖 *For detailed step-by-step guidance including Mosquitto WebSocket setup and manual D-Pad driving instructions, see [phoenix_run_guide.md](phoenix_run_guide.md).*
+> 📖 *For detailed step-by-step guidance including Mosquitto WebSocket setup and manual D-Pad driving instructions, see [docs/phoenix_run_guide.md](docs/phoenix_run_guide.md).*
 
 ### 3. Launch AI Vision Engine (Laptop / Workstation)
 ```bash
@@ -242,8 +242,9 @@ For deep architectural analyses, math models, and hardware references, explore t
 | 🚒 [Suppression Actuators & Gimbal](docs/suppression_actuators.md) | 2-DOF Pan-Tilt gimbal mechanics, 24V pump relay, and hold-to-spray safety |
 | 🎮 [Web Command Center & HUD](docs/web_command_center.md) | Operator HUD layout, telemetry gauges, dual-camera streaming & virtual controls |
 | 🔌 [Hardware Specifications & Wiring](docs/hardware_and_wiring.md) | Bill of materials, complete Raspberry Pi GPIO pinout table, and power distribution |
-| 🚀 [Phoenix Run & Execution Guide](phoenix_run_guide.md) | Step-by-step terminal execution, networking, and manual debugging runbook |
-| 📐 [Speed & Kinematics Calculations](speed_calculations.md) | Mathematical formulas and physical factors for skid-steer speed estimation |
+| 🚀 [Phoenix Run & Execution Guide](docs/phoenix_run_guide.md) | Step-by-step terminal execution, networking, and manual debugging runbook |
+| 📐 [Speed & Kinematics Calculations](docs/speed_calculations.md) | Mathematical formulas and physical factors for skid-steer speed estimation |
+| 🎨 [Brand Identity & Design System](docs/theme.md) | Cybernetic Ember color palette, tokens, logo variations, and UI styling |
 | 💻 [Useful CLI Commands](docs/useful_commands.md) | Hardware diagnostics, topic echo, and selective package build commands |
 
 ---
