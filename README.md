@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Phoenix Robot Logo" width="220" />
+  <img src="assets/phoenix_logo_fire.svg" alt="Phoenix Robot Logo" width="220" />
 </p>
 
 <h1 align="center">PHOENIX ROBOT</h1>
@@ -28,6 +28,23 @@ Combining an off-board **AI Perception Engine**, an on-board **ROS 2 Navigation 
 <p align="center">
   <img src="assets/Phoenix_Overview.png" width="600" alt="Phoenix Robot Physical System Overview" />
 </p>
+
+---
+
+## 🎬 Mission Demonstration
+
+<p align="center">
+  <video src="Phoenix_Demo.mp4" controls="controls" width="100%" style="max-width: 800px; border-radius: 8px;">
+    <source src="Phoenix_Demo.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+</p>
+
+<p align="center">
+  <a href="Phoenix_Demo.mp4">▶️ <strong>Watch Full Phoenix Demonstration Video (Phoenix_Demo.mp4)</strong></a>
+</p>
+
+> 📹 **Demonstration Highlights:** Full autonomous emergency response sequence — featuring real-time AI flame detection, fallen casualty localization, dynamic Nav2 obstacle avoidance with RF2O odometry, and 2-DOF precision suppression.
 
 ---
 
@@ -174,6 +191,7 @@ ros2 launch phoenix_description simulation.launch.py world_type:=datacenter pro_
 * **Phoenix Pro Model:** High-fidelity robot mesh with anodized Deep Crimson livery, Sky-Blue wheels, 2020 aluminum arch, and 2-DOF suppression nozzle.
 * **Fully Integrated:** Bridges LiDAR (`/scan`), odometry (`/odom`), driving (`/cmd_vel`), camera (`/camera/image_raw`), and clock (`/clock`).
 * **Web HUD Ready:** Automatically launches MQTT control bridges (`mqtt_nav_client`, `mqtt_motor_bridge`, `pump_controller`, `nozzle_controller`) with simulation time enabled (`use_sim_time:=True`).
+* **Automated Competition Demo:** See [Phoenix_Demo.mp4](Phoenix_Demo.mp4) for the recorded 6-stage autonomous run executing obstacle avoidance and suppression.
 * **18-Second Nav2 Stabilization:** Nav2 automatically launches 18 seconds after Gazebo to let SLAM Toolbox stabilize the `map -> odom` transform before costmaps activate.
 
 In a second terminal, after sourcing the workspace, dispatch a map-frame goal (or use the Web Command Center D-Pad / Goal sender):

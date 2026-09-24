@@ -20,7 +20,7 @@ def create_svgs():
     print(f"Extracted {len(valid_paths_grad)} valid paths.")
 
     # 1. Animated Fire SVG
-    svg_fire = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="210 20 604 750" width="100%" height="100%">
+    svg_fire = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="62 -35 900 900" width="100%" height="100%">
   <defs>
     <!-- Core Molten Flame Gradient matching theme.md -->
     <linearGradient id="fireGrad" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -52,7 +52,7 @@ def create_svgs():
 
     <style>
       .phoenix-silhouette {{
-        transform-origin: 512px 390px;
+        transform-origin: 512px 415px;
         animation: phoenixPulse 2.8s ease-in-out infinite alternate;
         filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.75)) drop-shadow(0 0 25px rgba(239, 68, 68, 0.45));
       }}
@@ -84,7 +84,7 @@ def create_svgs():
 '''
 
     # 2. Clean Vector Silhouette SVG (monochrome / scalable)
-    svg_vector = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="210 20 604 750" width="100%" height="100%">
+    svg_vector = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="62 -35 900 900" width="100%" height="100%">
   <g fill="currentColor">
     {''.join(valid_paths_mono)}
   </g>
